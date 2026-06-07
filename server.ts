@@ -2,6 +2,8 @@ import express from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
+import nodemailer from "nodemailer";
+import { createClient } from "@supabase/supabase-js";
 import dotenv from "dotenv";
 
 dotenv.config();
@@ -136,6 +138,92 @@ async function startServer() {
     } catch (err: any) {
       console.error("AI Error:", err);
       res.status(500).json({ error: err.message || 'Error communicating with AI service.' });
+    }
+  });
+
+  // OTP in-memory store
+  const otpStore = new Map<string, { otp: string; userId: string; expires: number }>();
+
+  // Get nodemailer transporter
+  function getTransporter() {
+    const email = process.env.GMAIL_EMAIL || 'sadeeppasindu0218@gmail.com';
+    const pass = process.env.GMAIL_APP_PASSWORD;
+    if (!pass) throw new Error('GMAIL_APP_PASSWORD not configured');
+    return nodemailer.createTransport({
+      host: 'smtp.gmail.com',
+      port: 587,
+      secure: false,
+      auth: { user: email, pass },
+    });
+  }
+
+  // Send OTP via email
+  app.post("/api/send-otp", async (req, res) => {
+    try {
+      const { email, userId } = req.body;
+      if (!email || !userId) return res.status(400).json({ error: 'Email and userId required' });
+
+      const otp = Math.floor(100000 + Math.random() * 900000).toString(); // 6-digit
+      otpStore.set(email, { otp, userId, expires: Date.now() + 600000 });
+
+      const transporter = getTransporter();
+      await transporter.sendMail({
+        from: `"SPT OFFICIAL" <sadeeppasindu0218@gmail.com>`,
+        to: email,
+        subject: '🔐 SPT OFFICIAL - Your Verification Code',
+        html: `
+          <div style="background:#0a0a16;padding:40px;font-family:sans-serif;">
+            <div style="max-width:480px;margin:0 auto;background:#1a1a2e;border-radius:16px;padding:32px;border:1px solid #333;">
+              <h1 style="color:#00f0ff;font-size:24px;text-align:center;">SPT OFFICIAL</h1>
+              <p style="color:#888;text-align:center;font-size:12px;">Sadeep Pasindu Creative Universe</p>
+              <hr style="border-color:#333;margin:20px 0;">
+              <h2 style="color:#fff;font-size:18px;">Your Verification Code</h2>
+              <p style="color:#aaa;font-size:14px;line-height:1.6;">Use the code below to verify your account:</p>
+              <div style="text-align:center;margin:30px 0;padding:20px;background:#0a0a16;border-radius:12px;letter-spacing:8px;">
+                <span style="font-size:36px;font-weight:bold;color:#00f0ff;font-family:monospace;">${otp}</span>
+              </div>
+              <p style="color:#666;font-size:12px;">This code expires in <strong style="color:#fcd34d;">10 minutes</strong>.</p>
+              <hr style="border-color:#222;margin:20px 0;">
+              <p style="color:#555;font-size:10px;text-align:center;">© 2026 SPT OFFICIAL. All rights reserved.</p>
+            </div>
+          </div>`,
+      });
+
+      res.json({ success: true });
+    } catch (err: any) {
+      console.error("Send OTP Error:", err);
+      res.status(500).json({ error: err.message || 'Failed to send OTP' });
+    }
+  });
+
+  // Verify OTP and confirm user
+  app.post("/api/verify-otp", async (req, res) => {
+    try {
+      const { email, otp } = req.body;
+      if (!email || !otp) return res.status(400).json({ error: 'Email and OTP required' });
+
+      const stored = otpStore.get(email);
+      if (!stored) return res.status(400).json({ error: 'No OTP found. Request a new one.' });
+      if (Date.now() > stored.expires) {
+        otpStore.delete(email);
+        return res.status(400).json({ error: 'OTP expired. Request a new one.' });
+      }
+      if (stored.otp !== otp) return res.status(400).json({ error: 'Invalid OTP code.' });
+
+      // Confirm user via Supabase Admin API
+      const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
+      const serviceRole = process.env.SUPABASE_SERVICE_ROLE;
+      if (!supabaseUrl || !serviceRole) return res.status(500).json({ error: 'Server config error' });
+
+      const supabaseAdmin = createClient(supabaseUrl, serviceRole);
+      const { error } = await supabaseAdmin.auth.admin.updateUserById(stored.userId, { email_confirm: true });
+      if (error) throw error;
+
+      otpStore.delete(email);
+      res.json({ success: true });
+    } catch (err: any) {
+      console.error("Verify OTP Error:", err);
+      res.status(500).json({ error: err.message || 'Failed to verify OTP' });
     }
   });
 

@@ -26,7 +26,8 @@ export default function SptUniverseGate({ onClose, onSuccess, language = 'en' }:
   const [password, setPassword] = useState<string>('');
   const [fullName, setFullName] = useState<string>('');
   const [rePassword, setRePassword] = useState<string>('');
-  const [otpPin, setOtpPin] = useState<string[]>(Array(8).fill(''));
+  const [otpPin, setOtpPin] = useState<string[]>(Array(6).fill(''));
+  const [pendingUserId, setPendingUserId] = useState<string>('');
 
   // Reset Password states
   const [newPassword, setNewPassword] = useState<string>('');
@@ -43,7 +44,7 @@ export default function SptUniverseGate({ onClose, onSuccess, language = 'en' }:
     setErrorMessage('');
     setSuccessMessage('');
     if (newView === 'otp' || newView === 'forgot_otp') {
-      setOtpPin(Array(8).fill(''));
+      setOtpPin(Array(6).fill(''));
     }
   };
 
@@ -141,6 +142,7 @@ export default function SptUniverseGate({ onClose, onSuccess, language = 'en' }:
     }
 
     setIsLoading(true);
+    let userId = '';
     try {
       const { data, error } = await supabase.auth.signUp({
         email,
@@ -150,10 +152,21 @@ export default function SptUniverseGate({ onClose, onSuccess, language = 'en' }:
         },
       });
       if (error) throw error;
+      userId = data.user?.id || '';
+      setPendingUserId(userId);
+
+      // Send OTP via our server (Gmail SMTP)
+      const otpRes = await fetch('/api/send-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, userId }),
+      });
+      const otpData = await otpRes.json();
+      if (!otpRes.ok) throw new Error(otpData.error || 'Failed to send OTP email');
 
       setSuccessMessage(gt(
-        '✅ SPT OFFICIAL වෙතින්: ඔබගේ ඊමේල් ලිපිනයට OTP තහවුරු කිරීමේ කේතයක් සහ තහවුරු කිරීමේ සබැඳියක් එවා ඇත. කරුණාකර ඔබගේ ඊමේල් ලිපිනය පරීක්ෂා කරන්න.',
-        '✅ SPT OFFICIAL: An 8-digit OTP verification code and confirmation link have been sent to your email. Please check your inbox.'
+        '✅ SPT OFFICIAL: ඔබගේ ඊමේල් ලිපිනයට 6-ඉලක්කම් OTP කේතයක් එවා ඇත. කරුණාකර ඔබගේ ඊමේල් ලිපිනය පරීක්ෂා කරන්න (SPAM බලන්න).',
+        '✅ SPT OFFICIAL: A 6-digit verification code has been sent to your email. Please check your inbox (and SPAM).'
       ));
       setView('otp');
     } catch (err: any) {
@@ -170,19 +183,21 @@ export default function SptUniverseGate({ onClose, onSuccess, language = 'en' }:
     setSuccessMessage('');
 
     const finalPin = otpPin.join('');
-    if (finalPin.length < 8 || !/^\d+$/.test(finalPin)) {
-      setErrorMessage(gt('කරුණාකර අංක 8 කින් යුත් වලංගු ආරක්ෂක PIN කේතය ඇතුළත් කරන්න.', 'Please enter a valid 8-digit verification code.'));
+    if (finalPin.length < 6 || !/^\d+$/.test(finalPin)) {
+      setErrorMessage(gt('කරුණාකර අංක 6 කින් යුත් වලංගු ආරක්ෂක PIN කේතය ඇතුළත් කරන්න.', 'Please enter a valid 6-digit verification code.'));
       return;
     }
 
     setIsLoading(true);
     try {
-      const { data, error } = await supabase.auth.verifyOtp({
-        email,
-        token: finalPin,
-        type: 'signup',
+      // Verify OTP via our server (confirms user via Supabase Admin API)
+      const verifyRes = await fetch('/api/verify-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, otp: finalPin }),
       });
-      if (error) throw error;
+      const verifyData = await verifyRes.json();
+      if (!verifyRes.ok) throw new Error(verifyData.error || 'Invalid OTP');
 
       setSuccessMessage(gt(
         '🎉 සුබ පැතුම්! ඔබගේ SPT OFFICIAL සාමාජික ගිණුම සාර්ථකව සක්‍රිය කරන ලදී! දැන් ඔබට සියලුම SPT පහසුකම් සඳහා ප්‍රවේශ විය හැක.',
@@ -192,7 +207,7 @@ export default function SptUniverseGate({ onClose, onSuccess, language = 'en' }:
         onSuccess({ email, name: fullName || 'SPT Creator Member', password }, true);
       }
     } catch (err: any) {
-      setErrorMessage(err.message || gt('OTP කේතය වැරදියි හෝ කල් ඉකුත් වී ඇත.', 'Invalid OTP pin or expired session.'));
+      setErrorMessage(err.message || gt('OTP කේතය වැරදියි හෝ කල් ඉකුත් වී ඇත.', 'Invalid OTP or expired session.'));
     } finally {
       setIsLoading(false);
     }
@@ -204,8 +219,14 @@ export default function SptUniverseGate({ onClose, onSuccess, language = 'en' }:
     setSuccessMessage('');
     setIsLoading(true);
     try {
-      const { error } = await supabase.auth.resend({ type: 'signup', email });
-      if (error) throw error;
+      if (!pendingUserId) throw new Error('User ID not found. Please sign up again.');
+      const otpRes = await fetch('/api/send-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, userId: pendingUserId }),
+      });
+      const otpData = await otpRes.json();
+      if (!otpRes.ok) throw new Error(otpData.error || 'Failed to resend OTP');
       setSuccessMessage(gt('✅ OTP කේතය නැවත එවා ඇත. කරුණාකර ඔබගේ ඊමේල් ලිපිනය පරීක්ෂා කරන්න (SPAM බලන්න).', '✅ OTP code resent. Please check your inbox (and SPAM folder).'));
     } catch (err: any) {
       setErrorMessage(err.message || gt('OTP කේතය නැවත එවීමට අපොහොසත් විය.', 'Failed to resend OTP code.'));
@@ -254,8 +275,8 @@ export default function SptUniverseGate({ onClose, onSuccess, language = 'en' }:
     setSuccessMessage('');
 
     const finalPin = otpPin.join('');
-    if (finalPin.length < 8 || !/^\d+$/.test(finalPin)) {
-      setErrorMessage(gt('කරුණාකර ඔබගේ ඊමේල් ලිපිනයට ලැබුණු අංක 8 ආරක්ෂිත PIN කේතය නිවැරදිව ඇතුළත් කරන්න.', 'Please enter the 8-digit recovery OTP code received in your email inbox.'));
+    if (finalPin.length < 6 || !/^\d+$/.test(finalPin)) {
+      setErrorMessage(gt('කරුණාකර ඔබගේ ඊමේල් ලිපිනයට ලැබුණු අංක 6 ආරක්ෂිත PIN කේතය නිවැරදිව ඇතුළත් කරන්න.', 'Please enter the 6-digit recovery OTP code received in your email inbox.'));
       return;
     }
 
@@ -682,12 +703,12 @@ export default function SptUniverseGate({ onClose, onSuccess, language = 'en' }:
                     <ShieldCheck className="w-5 h-5 text-amber-400" />
                   </h2>
                   <p className="text-xs text-slate-300 mt-1 leading-relaxed">
-                    {gt('ඔබගේ ඊමේල් ලිපිනයට ලැබුණු අංක 8 ආරක්ෂිත සංකේතය ඇතුළත් කරන්න.', 'Enter the 8-digit security code sent to your email.')}
+                    {gt('ඔබගේ ඊමේල් ලිපිනයට ලැබුණු අංක 6 ආරක්ෂිත සංකේතය ඇතුළත් කරන්න.', 'Enter the 6-digit security code sent to your email.')}
                   </p>
                 </div>
 
                 <form onSubmit={handleOtpSubmit} className="space-y-5">
-                  <div className="grid grid-cols-8 gap-2 max-w-[320px] mx-auto">
+                  <div className="grid grid-cols-6 gap-2 max-w-[260px] mx-auto">
                     {otpPin.map((data, index) => (
                       <input
                         key={index}
@@ -814,12 +835,12 @@ export default function SptUniverseGate({ onClose, onSuccess, language = 'en' }:
                     <ShieldCheck className="w-5 h-5 text-amber-400" />
                   </h2>
                   <p className="text-xs text-slate-300 mt-1 leading-relaxed">
-                    {gt('ඔබගේ ඊමේල් ලිපිනයට ලැබුණු අංක 8 ආරක්ෂිත Reset සංකේතය (OTP) ඇතුළත් කරන්න.', 'Enter the 8-digit password reset code (OTP) sent to your email.')}
+                    {gt('ඔබගේ ඊමේල් ලිපිනයට ලැබුණු අංක 6 ආරක්ෂිත Reset සංකේතය (OTP) ඇතුළත් කරන්න.', 'Enter the 6-digit password reset code (OTP) sent to your email.')}
                   </p>
                 </div>
 
                 <form onSubmit={handleForgotOtpSubmit} className="space-y-5">
-                  <div className="grid grid-cols-8 gap-2 max-w-[320px] mx-auto">
+                  <div className="grid grid-cols-6 gap-2 max-w-[260px] mx-auto">
                     {otpPin.map((data, index) => (
                       <input
                         key={index}
