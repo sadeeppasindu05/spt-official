@@ -876,7 +876,9 @@ export default function SptUniverseGate({ onClose, onSuccess, language = 'en' }:
                       setSuccessMessage('');
                       setIsLoading(true);
                       try {
-                        const { error } = await supabase.auth.resend({ type: 'recovery', email });
+                        const { error } = await supabase.auth.resetPasswordForEmail(email, {
+                          redirectTo: `${window.location.origin}/reset-password`,
+                        });
                         if (error) throw error;
                         setSuccessMessage(gt('✅ Reset කේතය නැවත එවා ඇත. SPAM බලන්න.', '✅ Reset code resent. Check SPAM.'));
                       } catch (err: any) {

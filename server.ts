@@ -5,8 +5,11 @@ import { GoogleGenAI } from "@google/genai";
 import nodemailer from "nodemailer";
 import { createClient } from "@supabase/supabase-js";
 import dotenv from "dotenv";
+import crypto from "crypto";
 
 dotenv.config();
+
+const ADMIN_AUTH_TOKEN = process.env.ADMIN_API_TOKEN || crypto.randomBytes(32).toString('hex');
 
 let adminProvidedApiKeys: Record<string, string> = {};
 let _aiClients: Record<string, GoogleGenAI> = {};
@@ -19,6 +22,17 @@ interface CustomAiModel {
 }
 
 let customAiModels: CustomAiModel[] = [];
+
+function requireAdmin(req: express.Request, res: express.Response, next: express.NextFunction) {
+  const authHeader = req.headers.authorization;
+  const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
+  const bodyToken = req.body?._adminToken;
+  if (token === ADMIN_AUTH_TOKEN || bodyToken === ADMIN_AUTH_TOKEN) {
+    next();
+  } else {
+    res.status(401).json({ error: 'Unauthorized. Valid admin token required.' });
+  }
+}
 
 function getAiClient(feature: string = 'chat'): GoogleGenAI {
   const keyToUse = adminProvidedApiKeys[feature] || process.env.GEMINI_API_KEY;
@@ -38,16 +52,24 @@ function getAiClient(feature: string = 'chat'): GoogleGenAI {
   return _aiClients[feature];
 }
 
-// Keep track of chat sessions in memory (basic implementation for chatbot)
 const chatSessions: Record<string, any> = {};
 
 async function startServer() {
   const app = express();
   const PORT = parseInt(process.env.PORT || "3000");
 
-  app.use(express.json());
+  app.use(express.json({ limit: '10mb' }));
 
-  // Supabase runtime config endpoint
+  // Security headers
+  app.use((req, res, next) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-Frame-Options', 'DENY');
+    res.setHeader('X-XSS-Protection', '1; mode=block');
+    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+    next();
+  });
+
+  // Supabase runtime config endpoint (no auth needed)
   app.get("/api/config", (req, res) => {
     res.json({
       supabaseUrl: process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "",
@@ -55,8 +77,13 @@ async function startServer() {
     });
   });
 
-  // API constraints check
-  app.get("/api/ai/status", (req, res) => {
+  // Admin auth status endpoint
+  app.get("/api/admin/token", (req, res) => {
+    res.json({ configured: !!process.env.ADMIN_API_TOKEN });
+  });
+
+  // Protected: AI status (requires admin token)
+  app.get("/api/ai/status", requireAdmin, (req, res) => {
     res.json({
       configured: {
         chat: !!(adminProvidedApiKeys['chat'] || process.env.GEMINI_API_KEY),
@@ -66,13 +93,13 @@ async function startServer() {
     });
   });
 
-  app.post("/api/ai/configure", (req, res) => {
+  // Protected: AI configure (requires admin token)
+  app.post("/api/ai/configure", requireAdmin, (req, res) => {
     const { apiKey, feature } = req.body;
     const targetFeature = feature || 'chat';
     
     if (apiKey) {
       adminProvidedApiKeys[targetFeature] = apiKey;
-      // Reset the client so it gets re-initialized with the new key next time
       delete _aiClients[targetFeature];
     } else {
       delete adminProvidedApiKeys[targetFeature];
@@ -89,7 +116,8 @@ async function startServer() {
     });
   });
 
-  app.post("/api/ai/custom-models", (req, res) => {
+  // Protected: Custom models (requires admin token)
+  app.post("/api/ai/custom-models", requireAdmin, (req, res) => {
     const { action, id, name, apiKey, isActive } = req.body;
     
     if (action === 'add') {
@@ -116,15 +144,21 @@ async function startServer() {
     });
   });
 
-  // Main chatbot endpoint
+  // Main chatbot endpoint (no auth needed for public chat)
   app.post("/api/ai/chat", async (req, res) => {
     try {
       const { message, sessionId = "default" } = req.body;
+      if (!message || typeof message !== 'string' || message.trim().length === 0) {
+        return res.status(400).json({ error: 'Message is required.' });
+      }
+      if (message.length > 4000) {
+        return res.status(400).json({ error: 'Message too long (max 4000 chars).' });
+      }
       const ai = getAiClient('chat');
       
       if (!chatSessions[sessionId]) {
         chatSessions[sessionId] = ai.chats.create({
-          model: "gemini-3.5-flash",
+          model: "gemini-2.0-flash",
           config: {
             systemInstruction: "You are the official SPT (Sadeep Pasindu Tools) Customer Support Assistant. You provide helpful, concise, and friendly support regarding SPT tools, services, subscriptions, and platform inquiries in Sinhala and English. Please answer politely and concisely. Sadeep Pasindu is the founder of SPT.",
           },
@@ -141,10 +175,17 @@ async function startServer() {
     }
   });
 
-  // OTP in-memory store
+  // OTP in-memory store with automatic cleanup
   const otpStore = new Map<string, { otp: string; userId: string; expires: number }>();
+  
+  // Clean expired OTPs every 5 minutes
+  setInterval(() => {
+    const now = Date.now();
+    for (const [key, val] of otpStore) {
+      if (now > val.expires) otpStore.delete(key);
+    }
+  }, 300000);
 
-  // Get nodemailer transporter
   function getTransporter() {
     const email = process.env.GMAIL_EMAIL || 'sadeeppasindu0218@gmail.com';
     const pass = process.env.GMAIL_APP_PASSWORD;
@@ -165,15 +206,16 @@ async function startServer() {
     try {
       const { email, userId } = req.body;
       if (!email || !userId) return res.status(400).json({ error: 'Email and userId required' });
+      if (typeof email !== 'string' || email.length > 320) return res.status(400).json({ error: 'Invalid email' });
 
-      const otp = Math.floor(100000 + Math.random() * 900000).toString(); // 6-digit
+      const otp = Math.floor(100000 + Math.random() * 900000).toString();
       otpStore.set(email, { otp, userId, expires: Date.now() + 600000 });
 
       const transporter = getTransporter();
       await transporter.sendMail({
         from: `"SPT OFFICIAL" <sadeeppasindu0218@gmail.com>`,
         to: email,
-        subject: '🔐 SPT OFFICIAL - Your Verification Code',
+        subject: 'SPT OFFICIAL - Your Verification Code',
         html: `
           <div style="background:#0a0a16;padding:40px;font-family:sans-serif;">
             <div style="max-width:480px;margin:0 auto;background:#1a1a2e;border-radius:16px;padding:32px;border:1px solid #333;">
@@ -187,7 +229,7 @@ async function startServer() {
               </div>
               <p style="color:#666;font-size:12px;">This code expires in <strong style="color:#fcd34d;">10 minutes</strong>.</p>
               <hr style="border-color:#222;margin:20px 0;">
-              <p style="color:#555;font-size:10px;text-align:center;">© 2026 SPT OFFICIAL. All rights reserved.</p>
+              <p style="color:#555;font-size:10px;text-align:center;">&copy; 2026 SPT OFFICIAL. All rights reserved.</p>
             </div>
           </div>`,
       });
@@ -213,12 +255,13 @@ async function startServer() {
       }
       if (stored.otp !== otp) return res.status(400).json({ error: 'Invalid OTP code.' });
 
-      // Confirm user via Supabase Admin API
       const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
-      const serviceRole = process.env.SUPABASE_SERVICE_ROLE;
+      const serviceRole = process.env.SUPABASE_SERVICE_ROLE_KEY;
       if (!supabaseUrl || !serviceRole) return res.status(500).json({ error: 'Server config error' });
 
-      const supabaseAdmin = createClient(supabaseUrl, serviceRole);
+      const supabaseAdmin = createClient(supabaseUrl, serviceRole, {
+        auth: { autoRefreshToken: false, persistSession: false }
+      });
       const { error } = await supabaseAdmin.auth.admin.updateUserById(stored.userId, { email_confirm: true });
       if (error) throw error;
 

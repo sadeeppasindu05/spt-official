@@ -1733,7 +1733,7 @@ export default function App() {
     }
   };
 
-  const handleLoginSubmit = (e: React.FormEvent) => {
+  const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!loginEmail) return;
     const resolvedName = loginName || loginEmail.split('@')[0];
@@ -1741,7 +1741,25 @@ export default function App() {
     const nameLower = resolvedName.toLowerCase().trim();
     const passLower = loginPass.toLowerCase().trim();
     
-    // Check if authenticating is an Admin
+    // Attempt Supabase Auth sign-in if credentials available
+    const isSupabaseReady = import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_ANON_KEY;
+    if (isSupabaseReady && loginPass) {
+      try {
+        const { error: signInError } = await supabase.auth.signInWithPassword({
+          email: emailLower,
+          password: loginPass,
+        });
+        if (signInError && signInError.message.includes('Invalid login credentials')) {
+          // Try sign up instead
+          await supabase.auth.signUp({
+            email: emailLower,
+            password: loginPass,
+            options: { data: { full_name: resolvedName } }
+          });
+        }
+      } catch (_) {}
+    }
+
     const isMasterAdmin = 
       emailLower === 'sadeeppasindu0218@gmail.com' || 
       emailLower === 'support@spt.com' || 
@@ -1755,7 +1773,6 @@ export default function App() {
       email: emailLower
     });
 
-    // Ensure user is registered in the subscription base
     setSptUsersList(prev => {
       const exists = prev.some(u => u.email.toLowerCase() === emailLower);
       if (exists) return prev;
@@ -1771,11 +1788,10 @@ export default function App() {
 
     if (isMasterAdmin) {
       setIsAdminUnlocked(true);
-      alert('Sadeep Pasindu Elite Console Unlocked! Admin tab is now visible in your navigation links bar.');
     }
 
     const existingUser = sptUsersList.find(u => u.email.toLowerCase() === emailLower);
-    let resolvedStatus = 'trial'; // default for newly registered
+    let resolvedStatus = 'trial';
     if (existingUser) {
       if (existingUser.subscriptionStatus === 'active') {
         if (existingUser.subscriptionExpiresAt) {
@@ -1846,20 +1862,33 @@ export default function App() {
     alert(`[Simulated Security Server] \n\nTo: ${loginEmail}\nVerification Code: ${generatedPin}\n\nEnter this 6-digit security code on the next screen to activate your account.`);
   };
 
-  // Step 2: Confirm 6 Digit code
-  const handleVerifyCodeSubmit = (e: React.FormEvent) => {
+  const handleVerifyCodeSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (userInputCode.trim() === verificationCodeSent) {
       const finalName = loginName.trim();
       const displayName = finalName.charAt(0).toUpperCase() + finalName.slice(1);
       const emailLower = loginEmail.trim().toLowerCase();
 
+      // Create Supabase Auth account on successful verification
+      const isSupabaseReady = import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_ANON_KEY;
+      if (isSupabaseReady && loginPass) {
+        try {
+          const { error: signUpError } = await supabase.auth.signUp({
+            email: emailLower,
+            password: loginPass,
+            options: { data: { full_name: displayName } }
+          });
+          if (signUpError && !signUpError.message.includes('already')) {
+            console.warn('Supabase signup note:', signUpError.message);
+          }
+        } catch (_) {}
+      }
+
       setCustomerSession({
         name: displayName,
         email: emailLower
       });
 
-      // Ensure user is registered in the subscription base
       setSptUsersList(prev => {
         const exists = prev.some(u => u.email.toLowerCase() === emailLower);
         if (exists) return prev;
@@ -1883,7 +1912,7 @@ export default function App() {
       }
 
       const existingUser = sptUsersList.find(u => u.email.toLowerCase() === emailLower);
-      let resolvedStatus = 'trial'; // default for newly registered
+      let resolvedStatus = 'trial';
       if (existingUser) {
         if (existingUser.subscriptionStatus === 'active') {
           if (existingUser.subscriptionExpiresAt) {
@@ -1908,9 +1937,6 @@ export default function App() {
 
       const hasActivePlan = resolvedStatus === 'active' || resolvedStatus === 'trial';
 
-      alert('ලියාපදිංචි වීම සාර්ථකයි! SPT Universe වෙත සාදරයෙන් පිළිගනිමු.');
-      
-      // Reset variables
       setLoginEmail('');
       setLoginPass('');
       setLoginName('');
@@ -2294,8 +2320,10 @@ export default function App() {
 
                 <button
                   onClick={async () => {
-                    await supabase.auth.signOut();
+                    try { await supabase.auth.signOut(); } catch (_) {}
                     setCustomerSession(null);
+                    setIsAdminUnlocked(false);
+                    setIsAdminPinVerified(false);
                     setActiveToolId(null);
                   }}
                   className="p-1.5 rounded-lg text-rose-400 hover:bg-rose-500/10 cursor-pointer transition"
@@ -4155,7 +4183,7 @@ export default function App() {
                 onClose={() => {
                   setShowLoginWall(false);
                 }}
-                onSuccess={async (userData) => {
+                onSuccess={async (userData, isSignUp) => {
                   const resolvedEmail = userData.email.toLowerCase().trim();
                   const displayName = userData.name || resolvedEmail.split('@')[0];
                   
@@ -4163,6 +4191,18 @@ export default function App() {
                     name: displayName,
                     email: resolvedEmail
                   });
+
+                  // If this was a signup via OTP, sign the user into Supabase
+                  if (isSignUp && userData.password) {
+                    try {
+                      await supabase.auth.signInWithPassword({
+                        email: resolvedEmail,
+                        password: userData.password,
+                      });
+                    } catch (signInErr) {
+                      console.warn("Post-OTP sign-in deferred (user may need to log in manually):", signInErr);
+                    }
+                  }
 
                   // Ensure user is registered in the subscription base
                   setSptUsersList(prev => {
@@ -4192,6 +4232,7 @@ export default function App() {
                         await supabase.from('profiles').upsert({
                           id: user.id,
                           email: resolvedEmail,
+                          name: displayName,
                           role: isMasterAdmin ? 'admin' : 'user',
                           updated_at: new Date().toISOString()
                         }, { onConflict: 'id' });

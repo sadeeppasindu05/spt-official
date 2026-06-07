@@ -3,12 +3,18 @@ import react from '@vitejs/plugin-react';
 import path from 'path';
 import {defineConfig} from 'vite';
 
-export default defineConfig(() => {
+export default defineConfig(({ mode }) => {
+  const isDev = mode === 'development';
+  
+  // In production (HF Space), use runtime window.__ vars from /api/config
+  // In development, use .env.local directly
+  const defineVars = isDev ? {} : {
+    'import.meta.env.VITE_SUPABASE_URL': 'window.__SUPABASE_URL__',
+    'import.meta.env.VITE_SUPABASE_ANON_KEY': 'window.__SUPABASE_ANON_KEY__',
+  };
+
   return {
-    define: {
-      'import.meta.env.VITE_SUPABASE_URL': 'window.__SUPABASE_URL__',
-      'import.meta.env.VITE_SUPABASE_ANON_KEY': 'window.__SUPABASE_ANON_KEY__',
-    },
+    define: defineVars,
     plugins: [react(), tailwindcss()],
     resolve: {
       alias: {
@@ -16,11 +22,21 @@ export default defineConfig(() => {
       },
     },
     server: {
-      // HMR is disabled in AI Studio via DISABLE_HMR env var.
-      // Do not modifyâfile watching is disabled to prevent flickering during agent edits.
       hmr: process.env.DISABLE_HMR !== 'true',
-      // Disable file watching when DISABLE_HMR is true to save CPU during agent edits.
       watch: process.env.DISABLE_HMR === 'true' ? null : {},
+    },
+    build: {
+      sourcemap: false,
+      minify: 'esbuild',
+      rollupOptions: {
+        output: {
+          manualChunks: {
+            vendor: ['react', 'react-dom', 'motion'],
+            supabase: ['@supabase/supabase-js'],
+            ui: ['lucide-react'],
+          },
+        },
+      },
     },
   };
 });

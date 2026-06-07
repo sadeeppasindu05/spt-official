@@ -1,16 +1,5 @@
--- SPT Official - Complete Database Schema + RLS Policies
--- Run this in Supabase SQL Editor to initialize the database
-
--- Admin check function (defined first as other policies depend on it)
-CREATE OR REPLACE FUNCTION public.is_admin()
-RETURNS boolean LANGUAGE plpgsql SECURITY DEFINER AS $$
-BEGIN
-  RETURN EXISTS (
-    SELECT 1 FROM public.profiles
-    WHERE id = auth.uid() AND role = 'admin'
-  );
-END;
-$$;
+-- SPT Official - Complete RLS Policies Deployment
+-- Run this in Supabase SQL Editor to apply all security policies
 
 -- 1. Profiles
 CREATE TABLE IF NOT EXISTS public.profiles (
@@ -25,7 +14,6 @@ CREATE TABLE IF NOT EXISTS public.profiles (
   receipt_url text,
   payment_submitted_at timestamp with time zone,
   profile_picture_url text,
-  updated_at timestamp with time zone default timezone('utc'::text, now()) not null,
   created_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 
@@ -36,10 +24,14 @@ DROP POLICY IF EXISTS "Users can insert their own profile." ON public.profiles;
 DROP POLICY IF EXISTS "Users can update their own profile." ON public.profiles;
 DROP POLICY IF EXISTS "Only admins can delete profiles." ON public.profiles;
 
-CREATE POLICY "Profiles are viewable by everyone." ON public.profiles FOR SELECT USING (true);
-CREATE POLICY "Users can insert their own profile." ON public.profiles FOR INSERT WITH CHECK (auth.uid() = id);
-CREATE POLICY "Users can update their own profile." ON public.profiles FOR UPDATE USING (auth.uid() = id OR is_admin());
-CREATE POLICY "Only admins can delete profiles." ON public.profiles FOR DELETE USING (is_admin());
+CREATE POLICY "Profiles are viewable by everyone." ON public.profiles
+  FOR SELECT USING (true);
+CREATE POLICY "Users can insert their own profile." ON public.profiles
+  FOR INSERT WITH CHECK (auth.uid() = id);
+CREATE POLICY "Users can update their own profile." ON public.profiles
+  FOR UPDATE USING (auth.uid() = id OR is_admin());
+CREATE POLICY "Only admins can delete profiles." ON public.profiles
+  FOR DELETE USING (is_admin());
 
 -- 2. Services
 CREATE TABLE IF NOT EXISTS public.services (
@@ -55,6 +47,11 @@ CREATE TABLE IF NOT EXISTS public.services (
 );
 
 ALTER TABLE public.services ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Services are viewable by everyone." ON public.services;
+DROP POLICY IF EXISTS "Only admins can insert services." ON public.services;
+DROP POLICY IF EXISTS "Only admins can update services." ON public.services;
+DROP POLICY IF EXISTS "Only admins can delete services." ON public.services;
 
 CREATE POLICY "Services are viewable by everyone." ON public.services FOR SELECT USING (true);
 CREATE POLICY "Only admins can insert services." ON public.services FOR INSERT WITH CHECK (is_admin());
@@ -76,6 +73,11 @@ CREATE TABLE IF NOT EXISTS public.tools (
 
 ALTER TABLE public.tools ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Tools are viewable by everyone." ON public.tools;
+DROP POLICY IF EXISTS "Only admins can insert tools." ON public.tools;
+DROP POLICY IF EXISTS "Only admins can update tools." ON public.tools;
+DROP POLICY IF EXISTS "Only admins can delete tools." ON public.tools;
+
 CREATE POLICY "Tools are viewable by everyone." ON public.tools FOR SELECT USING (true);
 CREATE POLICY "Only admins can insert tools." ON public.tools FOR INSERT WITH CHECK (is_admin());
 CREATE POLICY "Only admins can update tools." ON public.tools FOR UPDATE USING (is_admin());
@@ -95,6 +97,11 @@ CREATE TABLE IF NOT EXISTS public.brands (
 );
 
 ALTER TABLE public.brands ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Brands are viewable by everyone." ON public.brands;
+DROP POLICY IF EXISTS "Only admins can insert brands." ON public.brands;
+DROP POLICY IF EXISTS "Only admins can update brands." ON public.brands;
+DROP POLICY IF EXISTS "Only admins can delete brands." ON public.brands;
 
 CREATE POLICY "Brands are viewable by everyone." ON public.brands FOR SELECT USING (true);
 CREATE POLICY "Only admins can insert brands." ON public.brands FOR INSERT WITH CHECK (is_admin());
@@ -117,6 +124,11 @@ CREATE TABLE IF NOT EXISTS public.offers (
 );
 
 ALTER TABLE public.offers ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Offers are viewable by everyone." ON public.offers;
+DROP POLICY IF EXISTS "Only admins can insert offers." ON public.offers;
+DROP POLICY IF EXISTS "Only admins can update offers." ON public.offers;
+DROP POLICY IF EXISTS "Only admins can delete offers." ON public.offers;
 
 CREATE POLICY "Offers are viewable by everyone." ON public.offers FOR SELECT USING (true);
 CREATE POLICY "Only admins can insert offers." ON public.offers FOR INSERT WITH CHECK (is_admin());
@@ -142,6 +154,11 @@ CREATE TABLE IF NOT EXISTS public.reviews (
 
 ALTER TABLE public.reviews ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Reviews are viewable by everyone." ON public.reviews;
+DROP POLICY IF EXISTS "Anyone can insert reviews." ON public.reviews;
+DROP POLICY IF EXISTS "Only admins can update reviews." ON public.reviews;
+DROP POLICY IF EXISTS "Only admins can delete reviews." ON public.reviews;
+
 CREATE POLICY "Reviews are viewable by everyone." ON public.reviews FOR SELECT USING (true);
 CREATE POLICY "Anyone can insert reviews." ON public.reviews FOR INSERT WITH CHECK (true);
 CREATE POLICY "Only admins can update reviews." ON public.reviews FOR UPDATE USING (is_admin());
@@ -161,6 +178,11 @@ CREATE TABLE IF NOT EXISTS public.blogs (
 );
 
 ALTER TABLE public.blogs ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Blogs are viewable by everyone." ON public.blogs;
+DROP POLICY IF EXISTS "Only admins can insert blogs." ON public.blogs;
+DROP POLICY IF EXISTS "Only admins can update blogs." ON public.blogs;
+DROP POLICY IF EXISTS "Only admins can delete blogs." ON public.blogs;
 
 CREATE POLICY "Blogs are viewable by everyone." ON public.blogs FOR SELECT USING (true);
 CREATE POLICY "Only admins can insert blogs." ON public.blogs FOR INSERT WITH CHECK (is_admin());
@@ -182,6 +204,11 @@ CREATE TABLE IF NOT EXISTS public.homestats (
 
 ALTER TABLE public.homestats ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Homestats are viewable by everyone." ON public.homestats;
+DROP POLICY IF EXISTS "Only admins can insert homestats." ON public.homestats;
+DROP POLICY IF EXISTS "Only admins can update homestats." ON public.homestats;
+DROP POLICY IF EXISTS "Only admins can delete homestats." ON public.homestats;
+
 CREATE POLICY "Homestats are viewable by everyone." ON public.homestats FOR SELECT USING (true);
 CREATE POLICY "Only admins can insert homestats." ON public.homestats FOR INSERT WITH CHECK (is_admin());
 CREATE POLICY "Only admins can update homestats." ON public.homestats FOR UPDATE USING (is_admin());
@@ -200,6 +227,11 @@ CREATE TABLE IF NOT EXISTS public.aboutcards (
 );
 
 ALTER TABLE public.aboutcards ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Aboutcards are viewable by everyone." ON public.aboutcards;
+DROP POLICY IF EXISTS "Only admins can insert aboutcards." ON public.aboutcards;
+DROP POLICY IF EXISTS "Only admins can update aboutcards." ON public.aboutcards;
+DROP POLICY IF EXISTS "Only admins can delete aboutcards." ON public.aboutcards;
 
 CREATE POLICY "Aboutcards are viewable by everyone." ON public.aboutcards FOR SELECT USING (true);
 CREATE POLICY "Only admins can insert aboutcards." ON public.aboutcards FOR INSERT WITH CHECK (is_admin());
@@ -220,6 +252,11 @@ CREATE TABLE IF NOT EXISTS public.gateways (
 
 ALTER TABLE public.gateways ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Gateways are viewable by everyone." ON public.gateways;
+DROP POLICY IF EXISTS "Only admins can insert gateways." ON public.gateways;
+DROP POLICY IF EXISTS "Only admins can update gateways." ON public.gateways;
+DROP POLICY IF EXISTS "Only admins can delete gateways." ON public.gateways;
+
 CREATE POLICY "Gateways are viewable by everyone." ON public.gateways FOR SELECT USING (true);
 CREATE POLICY "Only admins can insert gateways." ON public.gateways FOR INSERT WITH CHECK (is_admin());
 CREATE POLICY "Only admins can update gateways." ON public.gateways FOR UPDATE USING (is_admin());
@@ -236,6 +273,11 @@ CREATE TABLE IF NOT EXISTS public.contacts (
 );
 
 ALTER TABLE public.contacts ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Contacts are viewable by everyone." ON public.contacts;
+DROP POLICY IF EXISTS "Only admins can insert contacts." ON public.contacts;
+DROP POLICY IF EXISTS "Only admins can update contacts." ON public.contacts;
+DROP POLICY IF EXISTS "Only admins can delete contacts." ON public.contacts;
 
 CREATE POLICY "Contacts are viewable by everyone." ON public.contacts FOR SELECT USING (true);
 CREATE POLICY "Only admins can insert contacts." ON public.contacts FOR INSERT WITH CHECK (is_admin());
@@ -257,6 +299,11 @@ CREATE TABLE IF NOT EXISTS public.plans (
 
 ALTER TABLE public.plans ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Plans are viewable by everyone." ON public.plans;
+DROP POLICY IF EXISTS "Only admins can insert plans." ON public.plans;
+DROP POLICY IF EXISTS "Only admins can update plans." ON public.plans;
+DROP POLICY IF EXISTS "Only admins can delete plans." ON public.plans;
+
 CREATE POLICY "Plans are viewable by everyone." ON public.plans FOR SELECT USING (true);
 CREATE POLICY "Only admins can insert plans." ON public.plans FOR INSERT WITH CHECK (is_admin());
 CREATE POLICY "Only admins can update plans." ON public.plans FOR UPDATE USING (is_admin());
@@ -271,20 +318,23 @@ CREATE TABLE IF NOT EXISTS public.system_config (
 
 ALTER TABLE public.system_config ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "System configuration is viewable by everyone." ON public.system_config;
+DROP POLICY IF EXISTS "Only admins can insert or update system configuration." ON public.system_config;
+
 CREATE POLICY "System configuration is viewable by everyone." ON public.system_config FOR SELECT USING (true);
 CREATE POLICY "Only admins can insert or update system configuration." ON public.system_config FOR ALL USING (is_admin());
 
--- Enable realtime for live data sync
-ALTER PUBLICATION supabase_realtime ADD TABLE IF NOT EXISTS public.profiles;
-ALTER PUBLICATION supabase_realtime ADD TABLE IF NOT EXISTS public.services;
-ALTER PUBLICATION supabase_realtime ADD TABLE IF NOT EXISTS public.tools;
-ALTER PUBLICATION supabase_realtime ADD TABLE IF NOT EXISTS public.brands;
-ALTER PUBLICATION supabase_realtime ADD TABLE IF NOT EXISTS public.offers;
-ALTER PUBLICATION supabase_realtime ADD TABLE IF NOT EXISTS public.reviews;
-ALTER PUBLICATION supabase_realtime ADD TABLE IF NOT EXISTS public.blogs;
-ALTER PUBLICATION supabase_realtime ADD TABLE IF NOT EXISTS public.homestats;
-ALTER PUBLICATION supabase_realtime ADD TABLE IF NOT EXISTS public.aboutcards;
-ALTER PUBLICATION supabase_realtime ADD TABLE IF NOT EXISTS public.gateways;
-ALTER PUBLICATION supabase_realtime ADD TABLE IF NOT EXISTS public.contacts;
-ALTER PUBLICATION supabase_realtime ADD TABLE IF NOT EXISTS public.plans;
-ALTER PUBLICATION supabase_realtime ADD TABLE IF NOT EXISTS public.system_config;
+-- Enable realtime for all tables (for live sync)
+ALTER PUBLICATION supabase_realtime ADD TABLE public.profiles;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.services;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.tools;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.brands;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.offers;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.reviews;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.blogs;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.homestats;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.aboutcards;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.gateways;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.contacts;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.plans;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.system_config;

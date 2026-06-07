@@ -1,13 +1,24 @@
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
-
-const finalUrl = supabaseUrl && supabaseUrl.trim() !== '' ? supabaseUrl : 'https://placeholder.supabase.co';
-const finalKey = supabaseAnonKey && supabaseAnonKey.trim() !== '' ? supabaseAnonKey : 'placeholder';
-
-if (!supabaseUrl || !supabaseAnonKey) {
-  console.warn("⚠️ Supabase credentials are missing. Running in local fallback mode.");
+function getSupabaseCredentials() {
+  const win = typeof window !== 'undefined' ? window : undefined;
+  const url = (win as any)?.__SUPABASE_URL__ || import.meta.env.VITE_SUPABASE_URL || '';
+  const key = (win as any)?.__SUPABASE_ANON_KEY__ || import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+  return { url, key };
 }
 
-export const supabase = createClient(finalUrl, finalKey);
+const creds = getSupabaseCredentials();
+const finalUrl = creds.url || 'https://placeholder.supabase.co';
+const finalKey = creds.key || 'placeholder';
+
+if (!creds.url || !creds.key) {
+  console.warn("Supabase credentials missing. Running in local fallback mode.");
+}
+
+export const supabase = createClient(finalUrl, finalKey, {
+  auth: {
+    autoRefreshToken: true,
+    persistSession: true,
+    detectSessionInUrl: true,
+  },
+});

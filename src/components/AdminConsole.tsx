@@ -3,11 +3,13 @@ import { motion } from 'motion/react';
 import { 
   Settings, Image, Paintbrush, Sliders, Activity, Plus, Laptop, KeyRound, Sparkles, Trash2, 
   Lock, Shield, Globe, RefreshCw, FileText, Check, CheckCircle, Menu, Eye, EyeOff, Layout, FolderKanban, PlusCircle, Video, Play, ExternalLink,
-  PenTool, Star, BarChart3, Users, MousePointerClick, Calendar, BookOpen, User, Mail, CheckCircle2
+  PenTool, Star, BarChart3, Users, MousePointerClick, Calendar, BookOpen, User, Mail, CheckCircle2,
+  Download, Upload
 } from 'lucide-react';
 import { SPACE_WALLPAPERS } from '../data';
 import { SystemConfig, SptTool, ServiceItem, AccessoryBrand, OfferItem, HomeStatCard, AboutCard, ReviewItem, TelemetryEvent, ContactLinkItem, BlogPost, SptUser } from '../types';
 import { ImageCropperModal } from './ImageCropper';
+import { createBackup, downloadBackup, parseBackupFile, saveAutoBackupData, getAutoBackupData, getAutoBackupSettings, saveAutoBackupSettings, getIntervalMs, AutoBackupInterval, AutoBackupSettings } from '../utils/backup';
 
 // Safe confirm dialog implementation for sandboxed environments
 const confirm = (msg: string): boolean => {
@@ -378,7 +380,9 @@ export default function AdminConsole({
   const [confirmPinField, setConfirmPinField] = useState('');
 
   // Dashboard Sub tab navigation
-  const [consoleTab, setConsoleTab] = useState<'info' | 'aiconfig' | 'services' | 'offers' | 'homestats' | 'aboutcards' | 'reviews' | 'contacts' | 'tools' | 'brands' | 'blogs' | 'users' | 'analytics' | 'payments' | 'security' | 'plans' | 'support'>('info');
+  const [consoleTab, setConsoleTab] = useState<'info' | 'aiconfig' | 'services' | 'offers' | 'homestats' | 'aboutcards' | 'reviews' | 'contacts' | 'tools' | 'brands' | 'blogs' | 'users' | 'analytics' | 'payments' | 'security' | 'plans' | 'support' | 'backup'>('info');
+  const [autoBackupSettings, setAutoBackupSettings] = useState<AutoBackupSettings>(getAutoBackupSettings());
+  const [autoBackupToast, setAutoBackupToast] = useState<string | null>(null);
   const [analyticsTimeframe, setAnalyticsTimeframe] = useState<'day' | 'week' | 'month' | '6months' | 'year' | 'lifetime'>('week');
   const [selectedLogType, setSelectedLogType] = useState<'all' | 'pageview' | 'click' | 'signup' | 'contact'>('all');
   const [aiApiKeyInputChat, setAiApiKeyInputChat] = useState('');
@@ -452,6 +456,41 @@ export default function AdminConsole({
       setIsAiConfigured(data.configured || { chat: false, tools: false });
       if (data.customModels) setCustomModels(data.customModels);
     }).catch(() => {});
+  }, []);
+
+  // Auto-backup timer
+  React.useEffect(() => {
+    const settings = getAutoBackupSettings();
+    setAutoBackupSettings(settings);
+    if (settings.interval === 'off') return;
+
+    const intervalMs = getIntervalMs(settings.interval);
+    if (!intervalMs) return;
+
+    const runAutoBackup = () => {
+      const now = Date.now();
+      const last = settings.lastBackup ? new Date(settings.lastBackup).getTime() : 0;
+      if (now - last >= intervalMs) {
+        const backup = createBackup({
+          config, tools, services, brands,
+          offers: offersList, homestats: homeStatsList,
+          aboutcards: aboutCardsList, reviews: reviewsList,
+          contacts: contactsList, blogs: blogsList,
+          users: sptUsersList, plans: propSubscriptionPlans,
+          gateways: propPaymentGateways, telemetry: telemetryList
+        });
+        saveAutoBackupData(backup);
+        const newSettings = { ...settings, lastBackup: new Date().toISOString() };
+        saveAutoBackupSettings(newSettings);
+        setAutoBackupSettings(newSettings);
+        setAutoBackupToast('🔄 Auto-backup completed at ' + new Date().toLocaleTimeString());
+        setTimeout(() => setAutoBackupToast(null), 4000);
+      }
+    };
+
+    runAutoBackup();
+    const timer = setInterval(runAutoBackup, 60000);
+    return () => clearInterval(timer);
   }, []);
 
   // Offer Edit and Form local states
@@ -1204,6 +1243,29 @@ export default function AdminConsole({
     );
   }
 
+  const BackupActionCard = ({ icon, title, description, buttonLabel, buttonColor, onAction }: {
+    icon: React.ReactNode;
+    title: string;
+    description: string;
+    buttonLabel: string;
+    buttonColor: string;
+    onAction: () => void;
+  }) => (
+    <div className="p-6 rounded-xl bg-white/[0.03] border border-white/10 hover:border-white/20 transition flex flex-col">
+      <div className="w-14 h-14 rounded-2xl bg-cyan-400/5 border border-white/5 flex items-center justify-center text-cyan-400 mb-4">
+        {icon}
+      </div>
+      <h4 className="text-base font-bold text-white font-display mb-2">{title}</h4>
+      <p className="text-xs text-slate-400 leading-relaxed mb-6 flex-grow">{description}</p>
+      <button
+        onClick={onAction}
+        className={`w-full py-3 bg-gradient-to-r ${buttonColor} text-neutral-950 font-bold text-xs font-mono uppercase tracking-widest rounded-xl transition-all duration-300 shadow-lg flex items-center justify-center gap-2 cursor-pointer hover:opacity-90`}
+      >
+        {buttonLabel}
+      </button>
+    </div>
+  );
+
   return (
     <div className="space-y-6 animate-fade-in">
       {/* Overview stats bar */}
@@ -1228,6 +1290,7 @@ export default function AdminConsole({
       <div className="flex border-b border-white/10 pb-0.5 scrollbar-hide overflow-x-auto gap-2">
         {[
           { id: 'analytics', label: '📊 DATA ANALYTICS SUITE', icon: BarChart3 },
+          { id: 'backup', label: '💾 BACKUP & RESTORE', icon: Download },
           { id: 'support', label: '✉️ CLIENT SUPPORT MESSAGES', icon: FileText },
           { id: 'plans', label: '📦 SUBSCRIPTION PACKAGES', icon: Star },
           { id: 'security', label: '🛡️ SECURITY & ADMINS', icon: Shield },
@@ -5665,13 +5728,213 @@ export default function AdminConsole({
                        <button onClick={() => setPaymentGateways(prev => prev.map(g => g.id === gateway.id ? {...g, isActive: !g.isActive} : g))} className={`cursor-pointer flex-1 sm:flex-none px-3 py-1.5 rounded text-[10px] font-bold uppercase border transition ${gateway.isActive ? 'bg-slate-800 text-slate-400 hover:text-white border-white/10' : 'bg-amber-500/20 text-amber-400 border-amber-500/30 hover:bg-amber-500/30'}`}>
                          {gateway.isActive ? 'Disable' : 'Enable'}
                        </button>
-                       <button onClick={() => setPaymentGateways(prev => prev.filter(g => g.id !== gateway.id))} className="cursor-pointer px-3 rounded bg-rose-500/10 text-rose-400 border border-rose-500/20 hover:bg-rose-500/20 transition">
-                         <Trash2 className="w-3.5 h-3.5" />
-                       </button>
-                    </div>
-                 </div>
+                        <button onClick={() => setPaymentGateways(prev => prev.filter(g => g.id !== gateway.id))} className="cursor-pointer px-3 rounded bg-rose-500/10 text-rose-400 border border-rose-500/20 hover:bg-rose-500/20 transition">
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                     </div>
+                  </div>
+               ))}
+            </div>
+         </div>
+      )}
+
+      {/* BACKUP & RESTORE SECTION */}
+      {consoleTab === 'backup' && (
+        <div className="space-y-6 animate-fade-in text-left max-w-4xl mx-auto">
+          {autoBackupToast && (
+            <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 text-xs font-mono text-center">
+              {autoBackupToast}
+            </div>
+          )}
+
+          {/* Auto Backup Settings */}
+          <div className="p-6 rounded-2xl glass-panel space-y-5">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-display font-bold text-white flex items-center gap-2">
+                  <RefreshCw className="w-5 h-5 text-emerald-400" /> Auto Backup
+                </h3>
+                <p className="text-xs text-slate-400 mt-1">ස්වයංක්‍රීයව backup කිරීමේ කාල පරතරය තෝරන්න. Backup data local browser එකේ save වෙයි.</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2">
+              {([
+                { value: 'off', label: 'Manual Only' },
+                { value: 'hourly', label: 'Every Hour' },
+                { value: '6hours', label: 'Every 6 Hrs' },
+                { value: 'daily', label: 'Daily' },
+                { value: 'weekly', label: 'Weekly' },
+                { value: 'monthly', label: 'Monthly' },
+              ] as { value: AutoBackupInterval; label: string }[]).map(opt => (
+                <button
+                  key={opt.value}
+                  onClick={() => {
+                    const newSettings: AutoBackupSettings = {
+                      interval: opt.value,
+                      lastBackup: autoBackupSettings.lastBackup,
+                    };
+                    saveAutoBackupSettings(newSettings);
+                    setAutoBackupSettings(newSettings);
+                  }}
+                  className={`px-3 py-2.5 rounded-xl text-[10px] font-mono font-bold tracking-wider transition cursor-pointer ${
+                    autoBackupSettings.interval === opt.value
+                      ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                      : 'bg-white/[0.03] text-slate-400 border border-white/10 hover:bg-white/[0.06]'
+                  }`}
+                >
+                  {opt.label}
+                </button>
               ))}
-           </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-4 text-[11px] font-mono text-slate-400">
+              <span>Status: <span className={autoBackupSettings.interval === 'off' ? 'text-slate-500' : 'text-emerald-400'}>
+                {autoBackupSettings.interval === 'off' ? '○ Manual Only' : '● Auto Active'}
+              </span></span>
+              {autoBackupSettings.lastBackup && (
+                <span>Last: <span className="text-slate-300">{new Date(autoBackupSettings.lastBackup).toLocaleString()}</span></span>
+              )}
+              {autoBackupSettings.interval !== 'off' && (
+                <button
+                  onClick={() => {
+                    const backup = createBackup({
+                      config, tools, services, brands,
+                      offers: offersList, homestats: homeStatsList,
+                      aboutcards: aboutCardsList, reviews: reviewsList,
+                      contacts: contactsList, blogs: blogsList,
+                      users: sptUsersList, plans: propSubscriptionPlans,
+                      gateways: propPaymentGateways, telemetry: telemetryList
+                    });
+                    saveAutoBackupData(backup);
+                    const newSettings = { ...autoBackupSettings, lastBackup: new Date().toISOString() };
+                    saveAutoBackupSettings(newSettings);
+                    setAutoBackupSettings(newSettings);
+                    setAutoBackupToast('🔄 Auto-backup saved at ' + new Date().toLocaleTimeString());
+                    setTimeout(() => setAutoBackupToast(null), 4000);
+                  }}
+                  className="text-cyan-400 hover:text-cyan-300 underline underline-offset-2 cursor-pointer"
+                >
+                  Run Now
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div className="p-6 rounded-2xl glass-panel space-y-6">
+            <div>
+              <h3 className="text-xl font-display font-bold text-white flex items-center gap-2">
+                <Download className="w-5 h-5 text-[#00f0ff]" /> Manual Backup & Restore
+              </h3>
+              <p className="text-sm text-slate-300 mt-2">
+                සම්පූර්ණ SPT OFFICIAL වෙබ් අඩවියේ දත්තම එක් JSON ගොනුවකට backup කර ගන්න. Google Drive, Dropbox වැනි ඕනෑම තැනක ගබඩා කරන්න.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <BackupActionCard
+                icon={<Download className="w-8 h-8" />}
+                title="Download Full Backup"
+                description="සියලුම දත්ත JSON ගොනුවක් ලෙස download කරන්න."
+                buttonLabel="📥 Download Backup"
+                buttonColor="from-cyan-500 to-sky-500"
+                onAction={() => {
+                  const backup = createBackup({
+                    config, tools, services, brands,
+                    offers: offersList, homestats: homeStatsList,
+                    aboutcards: aboutCardsList, reviews: reviewsList,
+                    contacts: contactsList, blogs: blogsList,
+                    users: sptUsersList, plans: propSubscriptionPlans,
+                    gateways: propPaymentGateways, telemetry: telemetryList
+                  });
+                  downloadBackup(backup);
+                }}
+              />
+
+              <BackupActionCard
+                icon={<Upload className="w-8 h-8" />}
+                title="Restore from File"
+                description="ඔබගේ Drive එකේ තියෙන JSON ගොනුවක් upload කර restore කරන්න."
+                buttonLabel="📤 Upload & Restore"
+                buttonColor="from-amber-400 to-yellow-500"
+                onAction={() => {
+                  const input = document.createElement('input');
+                  input.type = 'file';
+                  input.accept = '.json';
+                  input.onchange = async (e) => {
+                    const file = (e.target as HTMLInputElement).files?.[0];
+                    if (!file) return;
+                    try {
+                      const parsed = await parseBackupFile(file);
+                      const d = parsed.data as Record<string, any>;
+                      if (d.config && setConfig) setConfig(d.config);
+                      if (d.tools && onUpdateTools) onUpdateTools(d.tools);
+                      if (d.services && onUpdateServices) onUpdateServices(d.services);
+                      if (d.brands && onUpdateBrands) onUpdateBrands(d.brands);
+                      if (d.offers && setOffersList) setOffersList(d.offers);
+                      if (d.homestats && setHomeStatsList) setHomeStatsList(d.homestats);
+                      if (d.aboutcards && setAboutCardsList) setAboutCardsList(d.aboutcards);
+                      if (d.reviews && setReviewsList) setReviewsList(d.reviews);
+                      if (d.contacts && setContactsList) setContactsList(d.contacts);
+                      if (d.blogs && setBlogsList) setBlogsList(d.blogs);
+                      if (d.users && setSptUsersList) setSptUsersList(d.users);
+                      if (d.plans && propSetSubscriptionPlans) propSetSubscriptionPlans(d.plans);
+                      if (d.gateways && propSetPaymentGateways) propSetPaymentGateways(d.gateways);
+                      alert('✅ Backup restored successfully! All data has been updated.');
+                    } catch (err: any) {
+                      alert('❌ Restore failed: ' + (err.message || 'Invalid file'));
+                    }
+                  };
+                  input.click();
+                }}
+              />
+
+              <BackupActionCard
+                icon={<RefreshCw className="w-8 h-8" />}
+                title="Restore from Auto Backup"
+                description="Browser එකේ auto-save වෙලා තියෙන latest auto backup එකෙන් restore කරන්න."
+                buttonLabel="🔄 Restore Auto Backup"
+                buttonColor="from-emerald-400 to-teal-500"
+                onAction={() => {
+                  const autoData = getAutoBackupData();
+                  if (!autoData) {
+                    alert('❌ No auto backup found. Run an auto backup first.');
+                    return;
+                  }
+                  const d = autoData.data as Record<string, any>;
+                  if (d.config && setConfig) setConfig(d.config);
+                  if (d.tools && onUpdateTools) onUpdateTools(d.tools);
+                  if (d.services && onUpdateServices) onUpdateServices(d.services);
+                  if (d.brands && onUpdateBrands) onUpdateBrands(d.brands);
+                  if (d.offers && setOffersList) setOffersList(d.offers);
+                  if (d.homestats && setHomeStatsList) setHomeStatsList(d.homestats);
+                  if (d.aboutcards && setAboutCardsList) setAboutCardsList(d.aboutcards);
+                  if (d.reviews && setReviewsList) setReviewsList(d.reviews);
+                  if (d.contacts && setContactsList) setContactsList(d.contacts);
+                  if (d.blogs && setBlogsList) setBlogsList(d.blogs);
+                  if (d.users && setSptUsersList) setSptUsersList(d.users);
+                  if (d.plans && propSetSubscriptionPlans) propSetSubscriptionPlans(d.plans);
+                  if (d.gateways && propSetPaymentGateways) propSetPaymentGateways(d.gateways);
+                  alert('✅ Auto backup restored from ' + new Date(autoData.backupDate).toLocaleString());
+                }}
+              />
+            </div>
+
+            <div className="p-5 rounded-xl bg-white/[0.02] border border-white/5 space-y-3">
+              <div className="flex items-start gap-3">
+                <Shield className="w-5 h-5 text-amber-400 mt-0.5 flex-shrink-0" />
+                <div>
+                  <h4 className="text-sm font-bold text-white font-mono tracking-wide">Backup Instructions</h4>
+                  <ul className="mt-2 space-y-1.5 text-xs text-slate-400 leading-relaxed">
+                    <li>1. <span className="text-cyan-400">Download Backup</span> click කර JSON file එක Google Drive එකට save කරන්න.</li>
+                    <li>2. Auto Backup frequency එකක් තෝරන්න — browser එකේ auto save වෙයි.</li>
+                    <li>3. ප්‍රතිස්ථාපනයට file upload කරන්න හෝ auto backup එකෙන් restore කරන්න.</li>
+                    <li>4. Restore කළ පසු current data සියල්ල backup data වලින් replace වෙයි.</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>

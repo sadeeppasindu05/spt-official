@@ -6,3 +6,14 @@ coverage/
 *.log
 .env*
 !.env.example
+*.cjs
+*.js.map
+*.ts.map
+patch_*
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+dist/
+server.js
