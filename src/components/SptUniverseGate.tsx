@@ -198,7 +198,23 @@ export default function SptUniverseGate({ onClose, onSuccess, language = 'en' }:
     }
   };
 
-  // 5. Forgot Password Handler (Real Supabase Logic)
+  // 5. Resend OTP Email Handler
+  const handleResendOtp = async () => {
+    setErrorMessage('');
+    setSuccessMessage('');
+    setIsLoading(true);
+    try {
+      const { error } = await supabase.auth.resend({ type: 'signup', email });
+      if (error) throw error;
+      setSuccessMessage(gt('✅ OTP කේතය නැවත එවා ඇත. කරුණාකර ඔබගේ ඊමේල් ලිපිනය පරීක්ෂා කරන්න (SPAM බලන්න).', '✅ OTP code resent. Please check your inbox (and SPAM folder).'));
+    } catch (err: any) {
+      setErrorMessage(err.message || gt('OTP කේතය නැවත එවීමට අපොහොසත් විය.', 'Failed to resend OTP code.'));
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // 6. Forgot Password Handler (Real Supabase Logic)
   const handleForgotSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage('');
@@ -700,13 +716,22 @@ export default function SptUniverseGate({ onClose, onSuccess, language = 'en' }:
                   </button>
                 </form>
 
-                <div className="mt-5 text-center">
+                <div className="mt-4 text-center space-y-2">
                   <button
-                    onClick={() => handleViewChange('signup')}
-                    className="text-[10px] font-mono text-slate-400 hover:text-white flex items-center justify-center gap-1 mx-auto cursor-pointer"
+                    onClick={handleResendOtp}
+                    disabled={isLoading}
+                    className="text-[11px] font-mono text-amber-400 hover:text-amber-300 underline underline-offset-2 mx-auto cursor-pointer disabled:opacity-50"
                   >
-                    <ChevronLeft className="w-3.5 h-3.5" /> {gt('නැවත ලියාපදිංචි වීමට', 'Back to Sign Up')}
+                    {isLoading ? gt('යවමින්...', 'Sending...') : gt('OTP කේතය නැවත එවන්න', 'Resend OTP Code')}
                   </button>
+                  <div>
+                    <button
+                      onClick={() => handleViewChange('signup')}
+                      className="text-[10px] font-mono text-slate-400 hover:text-white flex items-center justify-center gap-1 mx-auto cursor-pointer"
+                    >
+                      <ChevronLeft className="w-3.5 h-3.5" /> {gt('නැවත ලියාපදිංචි වීමට', 'Back to Sign Up')}
+                    </button>
+                  </div>
                 </div>
               </motion.div>
             )}
@@ -823,13 +848,35 @@ export default function SptUniverseGate({ onClose, onSuccess, language = 'en' }:
                   </button>
                 </form>
 
-                <div className="mt-4 text-center">
+                <div className="mt-4 text-center space-y-2">
                   <button
-                    onClick={() => handleViewChange('forgot')}
-                    className="text-[10px] font-mono text-slate-400 hover:text-white flex items-center justify-center gap-1 mx-auto cursor-pointer"
+                    onClick={async () => {
+                      setErrorMessage('');
+                      setSuccessMessage('');
+                      setIsLoading(true);
+                      try {
+                        const { error } = await supabase.auth.resend({ type: 'recovery', email });
+                        if (error) throw error;
+                        setSuccessMessage(gt('✅ Reset කේතය නැවත එවා ඇත. SPAM බලන්න.', '✅ Reset code resent. Check SPAM.'));
+                      } catch (err: any) {
+                        setErrorMessage(err.message || gt('නැවත එවීමට අපොහොසත් විය.', 'Failed to resend.'));
+                      } finally {
+                        setIsLoading(false);
+                      }
+                    }}
+                    disabled={isLoading}
+                    className="text-[11px] font-mono text-amber-400 hover:text-amber-300 underline underline-offset-2 mx-auto cursor-pointer disabled:opacity-50"
                   >
-                    <ChevronLeft className="w-3.5 h-3.5" /> {gt('නැවත ඊමේල් ඇතුළත් කිරීමට', 'Back to Email Entry')}
+                    {isLoading ? gt('යවමින්...', 'Sending...') : gt('Reset කේතය නැවත එවන්න', 'Resend Reset Code')}
                   </button>
+                  <div>
+                    <button
+                      onClick={() => handleViewChange('forgot')}
+                      className="text-[10px] font-mono text-slate-400 hover:text-white flex items-center justify-center gap-1 mx-auto cursor-pointer"
+                    >
+                      <ChevronLeft className="w-3.5 h-3.5" /> {gt('නැවත ඊමේල් ඇතුළත් කිරීමට', 'Back to Email Entry')}
+                    </button>
+                  </div>
                 </div>
               </motion.div>
             )}
