@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>My Google AI Studio App</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script>
+      // pre-fetch Supabase configuration from environment before client script executes
+      (function() {
+        try {
+          var xhr = new XMLHttpRequest();
+          xhr.open('GET', '/api/config', false);
+          xhr.send(null);
+          if (xhr.status === 200) {
+            var config = JSON.parse(xhr.responseText);
+            window.__SUPABASE_URL__ = config.supabaseUrl;
+            window.__SUPABASE_ANON_KEY__ = config.supabaseAnonKey;
+          }
+        } catch (e) {
+          console.error("Failed to load Supabase configuration:", e);
+        }
+      })();
+    </script>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
+

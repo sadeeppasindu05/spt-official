@@ -1,0 +1,6 @@
+{
+  "name": "SPT Official",
+  "description": "Sadeep Pasindu Creative Universe - Showcase and premium software suite of SPT OFFICIAL, offering digital services, custom tools, and subsidiary brands.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
