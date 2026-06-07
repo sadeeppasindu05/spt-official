@@ -671,7 +671,7 @@ export default function SptUniverseGate({ onClose, onSuccess, language = 'en' }:
                 </div>
 
                 <form onSubmit={handleOtpSubmit} className="space-y-5">
-                  <div className="flex gap-2.5 justify-center">
+                  <div className="grid grid-cols-8 gap-2 max-w-[320px] mx-auto">
                     {otpPin.map((data, index) => (
                       <input
                         key={index}
@@ -680,7 +680,7 @@ export default function SptUniverseGate({ onClose, onSuccess, language = 'en' }:
                         value={data}
                         onChange={e => handlePinChange(e.target, index)}
                         onKeyDown={e => handlePinKeyDown(e, index)}
-                        className="w-11 h-12 text-center text-lg font-bold font-mono bg-white/[0.04] border border-white/10 rounded-xl text-white focus:outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-500/25 transition-all backdrop-blur-md"
+                        className="w-full h-12 text-center text-lg font-bold font-mono bg-white/[0.04] border border-white/10 rounded-xl text-white focus:outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-500/25 transition-all backdrop-blur-md"
                       />
                     ))}
                   </div>
@@ -794,7 +794,7 @@ export default function SptUniverseGate({ onClose, onSuccess, language = 'en' }:
                 </div>
 
                 <form onSubmit={handleForgotOtpSubmit} className="space-y-5">
-                  <div className="flex gap-2.5 justify-center">
+                  <div className="grid grid-cols-8 gap-2 max-w-[320px] mx-auto">
                     {otpPin.map((data, index) => (
                       <input
                         key={index}
@@ -803,7 +803,7 @@ export default function SptUniverseGate({ onClose, onSuccess, language = 'en' }:
                         value={data}
                         onChange={e => handlePinChange(e.target, index)}
                         onKeyDown={e => handlePinKeyDown(e, index)}
-                        className="w-11 h-12 text-center text-lg font-bold font-mono bg-white/[0.04] border border-white/10 rounded-xl text-white focus:outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-500/25 transition-all backdrop-blur-md"
+                        className="w-full h-12 text-center text-lg font-bold font-mono bg-white/[0.04] border border-white/10 rounded-xl text-white focus:outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-500/25 transition-all backdrop-blur-md"
                       />
                     ))}
                   </div>
