@@ -170,8 +170,8 @@ export default function SptUniverseGate({ onClose, onSuccess, language = 'en' }:
     setSuccessMessage('');
 
     const finalPin = otpPin.join('');
-    if (finalPin.length < 6 || !/^\d+$/.test(finalPin)) {
-      setErrorMessage(gt('කරුණාකර අංක 6 කින් යුත් වලංගු ආරක්ෂක PIN කේතය ඇතුළත් කරන්න.', 'Please enter a valid 6-digit verification code.'));
+    if (finalPin.length < 8 || !/^\d+$/.test(finalPin)) {
+      setErrorMessage(gt('කරුණාකර අංක 8 කින් යුත් වලංගු ආරක්ෂක PIN කේතය ඇතුළත් කරන්න.', 'Please enter a valid 8-digit verification code.'));
       return;
     }
 
@@ -238,7 +238,7 @@ export default function SptUniverseGate({ onClose, onSuccess, language = 'en' }:
     setSuccessMessage('');
 
     const finalPin = otpPin.join('');
-    if (finalPin.length < 6 || !/^\d+$/.test(finalPin)) {
+    if (finalPin.length < 8 || !/^\d+$/.test(finalPin)) {
       setErrorMessage(gt('කරුණාකර ඔබගේ ඊමේල් ලිපිනයට ලැබුණු අංක 8 ආරක්ෂිත PIN කේතය නිවැරදිව ඇතුළත් කරන්න.', 'Please enter the 8-digit recovery OTP code received in your email inbox.'));
       return;
     }
