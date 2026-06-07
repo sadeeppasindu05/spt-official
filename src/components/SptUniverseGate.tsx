@@ -26,7 +26,7 @@ export default function SptUniverseGate({ onClose, onSuccess, language = 'en' }:
   const [password, setPassword] = useState<string>('');
   const [fullName, setFullName] = useState<string>('');
   const [rePassword, setRePassword] = useState<string>('');
-  const [otpPin, setOtpPin] = useState<string[]>(Array(8).fill(''));
+  const [otpPin, setOtpPin] = useState<string[]>(Array(6).fill(''));
 
   // Reset Password states
   const [newPassword, setNewPassword] = useState<string>('');
@@ -43,7 +43,7 @@ export default function SptUniverseGate({ onClose, onSuccess, language = 'en' }:
     setErrorMessage('');
     setSuccessMessage('');
     if (newView === 'otp' || newView === 'forgot_otp') {
-      setOtpPin(Array(8).fill(''));
+      setOtpPin(Array(6).fill(''));
     }
   };
 
@@ -153,7 +153,7 @@ export default function SptUniverseGate({ onClose, onSuccess, language = 'en' }:
 
       setSuccessMessage(gt(
         '✅ SPT OFFICIAL වෙතින්: ඔබගේ ඊමේල් ලිපිනයට OTP තහවුරු කිරීමේ කේතයක් සහ තහවුරු කිරීමේ සබැඳියක් එවා ඇත. කරුණාකර ඔබගේ ඊමේල් ලිපිනය පරීක්ෂා කරන්න.',
-        '✅ SPT OFFICIAL: An 8-digit OTP verification code and confirmation link have been sent to your email. Please check your inbox.'
+        '✅ SPT OFFICIAL: A 6-digit OTP verification code and confirmation link have been sent to your email. Please check your inbox.'
       ));
       setView('otp');
     } catch (err: any) {
@@ -239,7 +239,7 @@ export default function SptUniverseGate({ onClose, onSuccess, language = 'en' }:
 
     const finalPin = otpPin.join('');
     if (finalPin.length < 6 || !/^\d+$/.test(finalPin)) {
-      setErrorMessage(gt('කරුණාකර ඔබගේ ඊමේල් ලිපිනයට ලැබුණු අංක 8 ආරක්ෂිත PIN කේතය නිවැරදිව ඇතුළත් කරන්න.', 'Please enter the 8-digit recovery OTP code received in your email inbox.'));
+      setErrorMessage(gt('කරුණාකර ඔබගේ ඊමේල් ලිපිනයට ලැබුණු අංක 6 ආරක්ෂිත PIN කේතය නිවැරදිව ඇතුළත් කරන්න.', 'Please enter the 6-digit recovery OTP code received in your email inbox.'));
       return;
     }
 
@@ -666,7 +666,7 @@ export default function SptUniverseGate({ onClose, onSuccess, language = 'en' }:
                     <ShieldCheck className="w-5 h-5 text-amber-400" />
                   </h2>
                   <p className="text-xs text-slate-300 mt-1 leading-relaxed">
-                    {gt('ඔබගේ ඊමේල් ලිපිනයට ලැබුණු අංක 8 ආරක්ෂිත සංකේතය ඇතුළත් කරන්න.', 'Enter the 8-digit security code sent to your email.')}
+                    {gt('ඔබගේ ඊමේල් ලිපිනයට ලැබුණු අංක 6 ආරක්ෂිත සංකේතය ඇතුළත් කරන්න.', 'Enter the 6-digit security code sent to your email.')}
                   </p>
                 </div>
 
@@ -789,7 +789,7 @@ export default function SptUniverseGate({ onClose, onSuccess, language = 'en' }:
                     <ShieldCheck className="w-5 h-5 text-amber-400" />
                   </h2>
                   <p className="text-xs text-slate-300 mt-1 leading-relaxed">
-                    {gt('ඔබගේ ඊමේල් ලිපිනයට ලැබුණු අංක 8 ආරක්ෂිත Reset සංකේතය (OTP) ඇතුළත් කරන්න.', 'Enter the 8-digit password reset code (OTP) sent to your email.')}
+                    {gt('ඔබගේ ඊමේල් ලිපිනයට ලැබුණු අංක 6 ආරක්ෂිත Reset සංකේතය (OTP) ඇතුළත් කරන්න.', 'Enter the 6-digit password reset code (OTP) sent to your email.')}
                   </p>
                 </div>
 
