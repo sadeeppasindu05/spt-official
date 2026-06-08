@@ -5,6 +5,7 @@ import { GoogleGenAI } from "@google/genai";
 import { createClient } from "@supabase/supabase-js";
 import dotenv from "dotenv";
 import crypto from "crypto";
+import nodemailer from "nodemailer";
 
 dotenv.config();
 
@@ -69,6 +70,41 @@ function getAppUrl(req?: express.Request) {
   if (process.env.APP_URL) return process.env.APP_URL;
   if (req) return `${req.protocol}://${req.get('host')}`;
   return 'http://localhost:3000';
+}
+
+function getTransporter() {
+  const gmailUser = process.env.GMAIL_EMAIL;
+  const gmailPass = process.env.GMAIL_APP_PASSWORD;
+  const supabaseUrl = getSupabaseUrl();
+  const serviceRole = getSupabaseServiceRole();
+  if (gmailUser && gmailPass) {
+    return nodemailer.createTransport({
+      host: 'smtp.gmail.com', port: 587, secure: false,
+      auth: { user: gmailUser, pass: gmailPass },
+    });
+  }
+  return null;
+}
+
+async function sendRecoveryEmail(email: string, resetLink: string): Promise<boolean> {
+  const transporter = getTransporter();
+  if (!transporter) return false;
+  try {
+    await transporter.sendMail({
+      from: `"SPT OFFICIAL" <${process.env.GMAIL_EMAIL}>`,
+      to: email,
+      subject: 'SPT OFFICIAL - Password Reset Link',
+      html: `<div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:24px;background:#0f172a;color:#e2e8f0;border-radius:12px">
+        <h2 style="color:#06b6d4;margin:0 0 16px">SPT OFFICIAL</h2>
+        <p>Click the button below to reset your password. This link expires in 1 hour.</p>
+        <a href="${resetLink}" style="display:inline-block;padding:12px 24px;background:#06b6d4;color:#0f172a;text-decoration:none;font-weight:bold;border-radius:8px;margin:16px 0">Reset Password</a>
+        <p style="color:#94a3b8;font-size:12px">If you didn't request this, ignore this email.</p>
+      </div>`,
+    });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 async function startServer() {
@@ -230,21 +266,49 @@ async function startServer() {
     res.redirect(appUrl);
   });
 
-  // Forgot password — send reset link via Supabase built-in email
+  // Forgot password — send reset link via nodemailer (Gmail SMTP) or fallback to Supabase email
   app.post("/api/forgot-password", async (req, res) => {
     try {
       const { email } = req.body;
       if (!email) return res.status(400).json({ error: 'Email required' });
 
+      const appUrl = getAppUrl(req);
       const supabaseUrl = getSupabaseUrl();
-      const supabaseAnonKey = getSupabaseAnonKey();
-      if (!supabaseUrl || !supabaseAnonKey) return res.status(500).json({ error: 'Server config error' });
+      const serviceRole = getSupabaseServiceRole();
 
-      const supabaseClient = createClient(supabaseUrl, supabaseAnonKey);
-      const { error } = await supabaseClient.auth.resetPasswordForEmail(email, {
-        redirectTo: `${getAppUrl(req)}/reset-password`,
-      });
-      if (error) throw error;
+      if (supabaseUrl && serviceRole) {
+        const supabaseAdmin = createClient(supabaseUrl, serviceRole, {
+          auth: { autoRefreshToken: false, persistSession: false }
+        });
+
+        // Generate recovery link via Supabase Admin API
+        const { data: linkData, error: linkError } = await supabaseAdmin.auth.admin.generateLink({
+          type: 'recovery',
+          email,
+          options: { redirectTo: `${appUrl}/reset-password` },
+        });
+
+        if (linkError) throw linkError;
+
+        const actionLink = linkData?.properties?.action_link;
+
+        if (actionLink) {
+          // Try sending via nodemailer first
+          const sent = await sendRecoveryEmail(email, actionLink);
+          if (sent) {
+            return res.json({ success: true, linkSent: true });
+          }
+        }
+      }
+
+      // Fallback: use Supabase built-in email
+      if (supabaseUrl && getSupabaseAnonKey()) {
+        const supabaseClient = createClient(supabaseUrl, getSupabaseAnonKey());
+        const { error } = await supabaseClient.auth.resetPasswordForEmail(email, {
+          redirectTo: `${appUrl}/reset-password`,
+        });
+        if (error) throw error;
+      }
 
       res.json({ success: true, linkSent: true });
     } catch (err: any) {
