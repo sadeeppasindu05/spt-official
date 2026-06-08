@@ -69,8 +69,12 @@ function getSupabaseServiceRole() {
 }
 
 function getAppUrl(req?: express.Request) {
-  if (process.env.APP_URL) return process.env.APP_URL;
-  if (req) return `${req.protocol}://${req.get('host')}`;
+  if (process.env.APP_URL) return process.env.APP_URL.replace(/\/+$/, '');
+  if (req) {
+    const proto = req.headers['x-forwarded-proto'] || req.protocol;
+    const host = req.headers['x-forwarded-host'] || req.get('host');
+    return `${proto}://${host}`;
+  }
   return 'http://localhost:3000';
 }
 
@@ -330,6 +334,7 @@ async function startServer() {
   const PORT = parseInt(process.env.PORT || "3000");
 
   app.use(express.json({ limit: '10mb' }));
+  app.set('trust proxy', 1);
 
   // Security headers
   app.use((req, res, next) => {
