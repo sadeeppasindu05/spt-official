@@ -388,11 +388,7 @@ export default function AdminConsole({
   // Fetch system health on mount + every 60s
   const fetchHealth = useCallback(async () => {
     try {
-      const token = localStorage.getItem('spt_admin_token');
-      if (!token) return;
-      const res = await fetch('/api/system/health', {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
+      const res = await fetch('/api/system/health');
       if (res.ok) {
         const data = await res.json();
         setHealthData(data);

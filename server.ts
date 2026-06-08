@@ -779,8 +779,8 @@ async function startServer() {
     }
   });
 
-  // System health check (admin-protected)
-  app.get("/api/system/health", requireAdmin, async (req, res) => {
+  // System health check
+  app.get("/api/system/health", async (req, res) => {
     try {
       const checks: { name: string; status: string; detail?: string }[] = [];
       const supabaseUrl = getSupabaseUrl();
