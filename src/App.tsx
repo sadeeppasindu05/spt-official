@@ -2368,25 +2368,25 @@ export default function App() {
           </div>
         </nav>
 
-        {/* Stats bar: real-time Registered / Subscribed / Online counts */}
+        {/* Stats bar: marketing base + real-time increments */}
         <div className="flex flex-wrap items-center justify-center gap-2 px-2">
           <div className="flex items-center gap-3 px-3 py-1.5 rounded-xl bg-white/5 border border-white/10 text-[10px] font-mono">
             <div className="flex items-center gap-1.5 text-slate-300">
               <User className="w-3 h-3 text-cyan-400" />
               <span>{t('ලියාපදිංචි', 'Registered')}:</span>
-              <span className="text-cyan-300 font-bold">{sptUsersList.length}</span>
+              <span className="text-cyan-300 font-bold">{592 - 17 + sptUsersList.length}</span>
             </div>
             <span className="text-slate-600">|</span>
             <div className="flex items-center gap-1.5 text-slate-300">
               <CheckCircle className="w-3 h-3 text-emerald-400" />
               <span>{t('සාමාජික', 'Subscribed')}:</span>
-              <span className="text-emerald-300 font-bold">{sptUsersList.filter(u => u.subscriptionStatus === 'active' || u.subscriptionStatus === 'trial').length}</span>
+              <span className="text-emerald-300 font-bold">{370 - 17 + sptUsersList.filter(u => u.subscriptionStatus === 'active' || u.subscriptionStatus === 'trial').length}</span>
             </div>
             <span className="text-slate-600">|</span>
             <div className="flex items-center gap-1.5 text-slate-300">
               <Activity className="w-3 h-3 text-amber-400" />
               <span>{t('මාර්ගගත', 'Online')}:</span>
-              <span className="text-amber-300 font-bold">{liveOnlineCount}</span>
+              <span className="text-amber-300 font-bold">{14 - 1 + liveOnlineCount}</span>
             </div>
           </div>
           {customerSession && (
