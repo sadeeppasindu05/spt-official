@@ -779,6 +779,133 @@ async function startServer() {
     }
   });
 
+  // System health check (admin-protected)
+  app.get("/api/system/health", requireAdmin, async (req, res) => {
+    try {
+      const checks: { name: string; status: string; detail?: string }[] = [];
+      const supabaseUrl = getSupabaseUrl();
+      const serviceRole = getSupabaseServiceRole();
+
+      // 1. Supabase connection
+      const supabaseConfigured = !!(supabaseUrl && serviceRole);
+      checks.push({
+        name: 'Supabase Configuration',
+        status: supabaseConfigured ? 'pass' : 'fail',
+        detail: supabaseConfigured ? 'URL + Service Key present' : 'Missing credentials',
+      });
+      if (supabaseConfigured) {
+        try {
+          const supabaseAdmin = createClient(supabaseUrl!, serviceRole!, {
+            auth: { autoRefreshToken: false, persistSession: false },
+            realtime: { transport: ws }
+          });
+          await supabaseAdmin.auth.admin.listUsers();
+          checks.push({ name: 'Supabase Connection', status: 'pass', detail: 'Admin API reachable' });
+        } catch {
+          checks.push({ name: 'Supabase Connection', status: 'fail', detail: 'Admin API unreachable' });
+        }
+      }
+
+      // 2. Gmail REST API
+      const gmailConfigured = !!(process.env.GMAIL_CLIENT_ID && process.env.GMAIL_CLIENT_SECRET && process.env.GMAIL_REFRESH_TOKEN);
+      if (gmailConfigured) {
+        try {
+          const token = await getGmailAccessToken();
+          checks.push({ name: 'Gmail REST API', status: 'pass', detail: token ? 'Access token OK' : 'No token returned' });
+        } catch (e: any) {
+          checks.push({ name: 'Gmail REST API', status: 'fail', detail: `Token error: ${e.message}` });
+        }
+      } else {
+        checks.push({ name: 'Gmail REST API', status: 'fail', detail: 'GMAIL_CLIENT_ID/GMAIL_CLIENT_SECRET/GMAIL_REFRESH_TOKEN not set' });
+      }
+
+      // 3. SMTP status
+      const smtpConfigured = !!(process.env.GMAIL_EMAIL && process.env.GMAIL_APP_PASSWORD);
+      checks.push({
+        name: 'SMTP (port 587)',
+        status: smtpConfigured ? 'degraded' : 'warn',
+        detail: smtpConfigured ? 'Configured but likely blocked (timeout)' : 'GMAIL_APP_PASSWORD not set',
+      });
+      checks.push({
+        name: 'SMTP (port 465)',
+        status: smtpConfigured ? 'degraded' : 'warn',
+        detail: smtpConfigured ? 'Configured but likely blocked (timeout)' : 'GMAIL_APP_PASSWORD not set',
+      });
+
+      // 4. SendGrid
+      checks.push({
+        name: 'SendGrid (port 443)',
+        status: process.env.SENDGRID_API_KEY ? 'pass' : 'warn',
+        detail: process.env.SENDGRID_API_KEY ? 'Configured' : 'Not configured (optional)',
+      });
+
+      // 5. Overall email sending
+      const emailWorking = gmailConfigured || !!process.env.SENDGRID_API_KEY;
+      checks.push({
+        name: 'Email Sending',
+        status: emailWorking ? 'pass' : 'fail',
+        detail: emailWorking
+          ? gmailConfigured
+            ? 'Gmail API functional'
+            : 'SendGrid available'
+          : 'No email method available',
+      });
+
+      // 6. HF Space status (via API)
+      try {
+        const hfRes = await fetch('https://huggingface.co/api/spaces/Sadeeppasindu05/spt-official');
+        if (hfRes.ok) {
+          const hfData = await hfRes.json();
+          const stage = hfData?.runtime?.stage || 'unknown';
+          const domainStage = hfData?.runtime?.domains?.[0]?.stage || 'unknown';
+          const sha = hfData?.runtime?.sha || hfData?.sha || 'unknown';
+          checks.push({
+            name: 'HF Space Status',
+            status: stage === 'RUNNING' ? 'pass' : 'fail',
+            detail: `Stage: ${stage}, Domain: ${domainStage}`,
+          });
+          checks.push({
+            name: 'Deployed Commit',
+            status: 'info',
+            detail: sha.substring(0, 7),
+          });
+        } else {
+          checks.push({ name: 'HF Space Status', status: 'fail', detail: 'API unreachable' });
+        }
+      } catch {
+        checks.push({ name: 'HF Space Status', status: 'fail', detail: 'API request failed' });
+      }
+
+      // 7. Server info
+      const uptimeSec = process.uptime();
+      const uptimeStr = uptimeSec >= 86400
+        ? `${Math.floor(uptimeSec / 86400)}d ${Math.floor((uptimeSec % 86400) / 3600)}h ${Math.floor((uptimeSec % 3600) / 60)}m`
+        : uptimeSec >= 3600
+          ? `${Math.floor(uptimeSec / 3600)}h ${Math.floor((uptimeSec % 3600) / 60)}m`
+          : `${Math.floor(uptimeSec / 60)}m ${Math.floor(uptimeSec % 60)}s`;
+      checks.push({ name: 'Server Uptime', status: 'info', detail: uptimeStr });
+      checks.push({
+        name: 'Memory Usage',
+        status: 'info',
+        detail: `${(process.memoryUsage().rss / 1024 / 1024).toFixed(1)} MB`,
+      });
+      checks.push({
+        name: 'App URL',
+        status: 'info',
+        detail: getAppUrl(req),
+      });
+
+      // Overall status
+      const hasFail = checks.some(c => c.status === 'fail');
+      const hasDegraded = checks.some(c => c.status === 'degraded');
+      const overall = hasFail ? 'unhealthy' : hasDegraded ? 'degraded' : 'healthy';
+
+      res.json({ overall, checks, timestamp: Date.now() });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || 'Health check failed' });
+    }
+  });
+
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({

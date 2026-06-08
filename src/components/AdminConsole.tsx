@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { motion } from 'motion/react';
 import { 
   Settings, Image, Paintbrush, Sliders, Activity, Plus, Laptop, KeyRound, Sparkles, Trash2, 
@@ -381,6 +381,35 @@ export default function AdminConsole({
 
   // Dashboard Sub tab navigation
   const [consoleTab, setConsoleTab] = useState<'info' | 'aiconfig' | 'services' | 'offers' | 'homestats' | 'aboutcards' | 'reviews' | 'contacts' | 'tools' | 'brands' | 'blogs' | 'users' | 'analytics' | 'payments' | 'security' | 'plans' | 'support' | 'backup'>('info');
+  const [healthData, setHealthData] = useState<{ overall: string; checks: { name: string; status: string; detail?: string }[]; timestamp: number } | null>(null);
+  const [showHealthModal, setShowHealthModal] = useState(false);
+  const [healthError, setHealthError] = useState('');
+
+  // Fetch system health on mount + every 60s
+  const fetchHealth = useCallback(async () => {
+    try {
+      const token = localStorage.getItem('spt_admin_token');
+      if (!token) return;
+      const res = await fetch('/api/system/health', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setHealthData(data);
+        setHealthError('');
+      } else {
+        setHealthError(`Status ${res.status}`);
+      }
+    } catch {
+      setHealthError('Fetch failed');
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchHealth();
+    const interval = setInterval(fetchHealth, 60000);
+    return () => clearInterval(interval);
+  }, [fetchHealth]);
   const [autoBackupSettings, setAutoBackupSettings] = useState<AutoBackupSettings>(getAutoBackupSettings());
   const [autoBackupToast, setAutoBackupToast] = useState<string | null>(null);
   const [analyticsTimeframe, setAnalyticsTimeframe] = useState<'day' | 'week' | 'month' | '6months' | 'year' | 'lifetime'>('week');
@@ -1269,7 +1298,7 @@ export default function AdminConsole({
   return (
     <div className="space-y-6 animate-fade-in">
       {/* Overview stats bar */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
         {[
           { label: 'Active Theme Accent', value: config.neonAccent.toUpperCase(), color: 'text-cyan-400' },
           { label: 'Installed Plugins', value: `${tools.length} Tools`, color: 'text-indigo-400' },
@@ -1284,6 +1313,28 @@ export default function AdminConsole({
             </div>
           </div>
         ))}
+        {/* System Health badge */}
+        <div
+          onClick={() => setShowHealthModal(true)}
+          className="p-4 rounded-xl glass-panel relative overflow-hidden cursor-pointer hover:bg-white/5 transition group"
+        >
+          <span className="block text-[10px] font-mono text-slate-400 uppercase tracking-wider">System Health</span>
+          <span className="block text-lg font-bold font-display mt-0.5 tracking-tight">
+            {healthError
+              ? <span className="text-slate-500">⚠️ ?</span>
+              : !healthData
+                ? <span className="text-slate-500 animate-pulse">⋯</span>
+                : healthData.overall === 'healthy'
+                  ? <span className="text-emerald-400">🟢 Healthy</span>
+                  : healthData.overall === 'degraded'
+                    ? <span className="text-amber-400">🟡 Degraded</span>
+                    : <span className="text-rose-400">🔴 Unhealthy</span>
+            }
+          </span>
+          <div className="absolute right-0 bottom-0 w-8 h-8 rounded-tl-xl bg-white/5 flex items-center justify-center opacity-0 group-hover:opacity-100 transition">
+            <span className="text-[9px] text-slate-400">+</span>
+          </div>
+        </div>
       </div>
 
       {/* High-End Sub tab navigation bar */}
@@ -5933,6 +5984,38 @@ export default function AdminConsole({
                   </ul>
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* System Health Modal */}
+      {showHealthModal && healthData && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" onClick={() => setShowHealthModal(false)}>
+          <div className="bg-slate-900 border border-white/10 rounded-2xl w-full max-w-lg max-h-[80vh] overflow-y-auto shadow-2xl" onClick={e => e.stopPropagation()}>
+            <div className="sticky top-0 bg-slate-900/95 backdrop-blur-sm border-b border-white/10 px-5 py-4 flex items-center justify-between">
+              <h3 className="text-sm font-bold text-white font-mono tracking-wide flex items-center gap-2">
+                {healthData.overall === 'healthy' ? '🟢' : healthData.overall === 'degraded' ? '🟡' : '🔴'}
+                System Health — {healthData.overall === 'healthy' ? 'Healthy' : healthData.overall === 'degraded' ? 'Degraded' : 'Unhealthy'}
+              </h3>
+              <button onClick={() => setShowHealthModal(false)} className="text-slate-400 hover:text-white text-lg cursor-pointer">&times;</button>
+            </div>
+            <div className="p-5 space-y-2">
+              {healthData.checks.map((check, i) => (
+                <div key={i} className="flex items-start gap-3 p-3 rounded-xl bg-white/[0.03] border border-white/5">
+                  <span className="text-base flex-shrink-0 mt-0.5">
+                    {check.status === 'pass' ? '✅' : check.status === 'fail' ? '❌' : check.status === 'degraded' ? '⚠️' : check.status === 'warn' ? 'ℹ️' : '📋'}
+                  </span>
+                  <div className="min-w-0">
+                    <span className="block text-xs font-bold text-white font-mono">{check.name}</span>
+                    {check.detail && <span className="block text-[10px] text-slate-400 mt-0.5 break-words">{check.detail}</span>}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="px-5 pb-4 pt-2 text-[9px] text-slate-600 font-mono text-right">
+              Updated {new Date(healthData.timestamp).toLocaleTimeString()}
+              <button onClick={() => fetchHealth()} className="ml-3 text-cyan-400 hover:text-cyan-300 cursor-pointer">↻ Refresh</button>
             </div>
           </div>
         </div>
