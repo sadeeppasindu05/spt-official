@@ -7,6 +7,7 @@ import dotenv from "dotenv";
 import crypto from "crypto";
 import nodemailer from "nodemailer";
 import https from "https";
+import ws from "ws";
 
 dotenv.config();
 
@@ -456,7 +457,8 @@ async function startServer() {
       if (!supabaseUrl || !serviceRole) return res.status(500).json({ error: 'Server config error' });
 
       const supabaseAdmin = createClient(supabaseUrl, serviceRole, {
-        auth: { autoRefreshToken: false, persistSession: false }
+        auth: { autoRefreshToken: false, persistSession: false },
+        realtime: { transport: ws }
       });
 
       // Generate confirmation link
@@ -530,7 +532,8 @@ async function startServer() {
       if (!supabaseUrl || !serviceRole) return res.status(500).json({ error: 'Server config error' });
 
       const supabaseAdmin = createClient(supabaseUrl, serviceRole, {
-        auth: { autoRefreshToken: false, persistSession: false }
+        auth: { autoRefreshToken: false, persistSession: false },
+        realtime: { transport: ws }
       });
 
       const { data: userList } = await supabaseAdmin.auth.admin.listUsers();
@@ -568,7 +571,8 @@ async function startServer() {
       if (!supabaseUrl || !serviceRole) return res.status(500).json({ error: 'Server config error' });
 
       const supabaseAdmin = createClient(supabaseUrl, serviceRole, {
-        auth: { autoRefreshToken: false, persistSession: false }
+        auth: { autoRefreshToken: false, persistSession: false },
+        realtime: { transport: ws }
       });
 
       // Find user by email
@@ -598,7 +602,8 @@ async function startServer() {
       if (!supabaseUrl || !serviceRole) return res.status(500).json({ error: 'Server config error' });
 
       const supabaseAdmin = createClient(supabaseUrl, serviceRole, {
-        auth: { autoRefreshToken: false, persistSession: false }
+        auth: { autoRefreshToken: false, persistSession: false },
+        realtime: { transport: ws }
       });
       const { error } = await supabaseAdmin.auth.admin.updateUserById(userId, { email_confirm: true });
       if (error) throw error;
@@ -617,7 +622,7 @@ async function startServer() {
       const supabaseUrl = getSupabaseUrl();
       const supabaseAnonKey = getSupabaseAnonKey();
       if (supabaseUrl && supabaseAnonKey) {
-        const supabaseClient = createClient(supabaseUrl, supabaseAnonKey);
+        const supabaseClient = createClient(supabaseUrl, supabaseAnonKey, { realtime: { transport: ws } });
         await supabaseClient.auth.exchangeCodeForSession(code);
       }
     }
@@ -637,7 +642,8 @@ async function startServer() {
       if (!supabaseUrl || !serviceRole) return res.status(500).json({ error: 'Server config error' });
 
       const supabaseAdmin = createClient(supabaseUrl, serviceRole, {
-        auth: { autoRefreshToken: false, persistSession: false }
+        auth: { autoRefreshToken: false, persistSession: false },
+        realtime: { transport: ws }
       });
 
       const { data: linkData, error: linkError } = await supabaseAdmin.auth.admin.generateLink({
