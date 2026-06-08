@@ -173,13 +173,24 @@ export default function SptUniverseGate({ onClose, onSuccess, language = 'en', r
       if (!confirmRes.ok) throw new Error(confirmData.error || 'Failed to activate account');
 
       setSuccessMessage(gt(
-        '✅ සුභ පැතුම්! ඔබගේ SPT OFFICIAL ගිණුම සාර්ථකව සක්‍රිය කරන ලදී! දැන් ඔබට පිවිසිය හැක.',
-        '✅ Congratulations! Your SPT OFFICIAL account has been activated! You can now log in.'
+        '✅ සුභ පැතුම්! ඔබගේ SPT OFFICIAL ගිණුම සාර්ථකව සක්‍රිය කරන ලදී! ස්වයංක්‍රීයව පිවිසෙමින්...',
+        '✅ Congratulations! Your SPT OFFICIAL account has been activated! Auto-logging in...'
       ));
-      setTimeout(() => {
-        setView('login');
-        setPassword('');
-      }, 2000);
+      // Auto-login after successful signup
+      setTimeout(async () => {
+        try {
+          const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
+          if (!signInError && onSuccess) {
+            onSuccess({ email, name: fullName, password });
+          } else {
+            setView('login');
+            setPassword('');
+          }
+        } catch {
+          setView('login');
+          setPassword('');
+        }
+      }, 1500);
     } catch (err: any) {
       setErrorMessage(err.message || gt('ලියාපදිංචි වීමේදී දෝෂයක් මතු විය.', 'Error signing up. Please try again.'));
     } finally {
@@ -220,40 +231,7 @@ export default function SptUniverseGate({ onClose, onSuccess, language = 'en', r
     }
   };
 
-  // 6. Forgot OTP PIN Verification Handler — verify via our server
-  const handleForgotOtpSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setErrorMessage('');
-    setSuccessMessage('');
-
-    const finalPin = otpPin.join('');
-    if (finalPin.length < 6 || !/^\d+$/.test(finalPin)) {
-      setErrorMessage(gt('කරුණාකර ඔබගේ ඊමේල් ලිපිනයට ලැබුණු අංක 6 ආරක්ෂිත PIN කේතය නිවැරදිව ඇතුළත් කරන්න.', 'Please enter the 6-digit recovery OTP code received in your email inbox.'));
-      return;
-    }
-
-    setIsLoading(true);
-    try {
-      const res = await fetch('/api/verify-reset-otp', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, otp: finalPin }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Invalid OTP');
-
-      // No OTP flow — reset password via recovery link only
-      setIsOtpResetFlow(false);
-      handleViewChange('login');
-      setErrorMessage(gt('OTP කේතය තවදුරටත් සහාය නොදක්වයි. කරුණාකර ඔබගේ ඊමේල් ලිපිනයට එවා ඇති සබැඳිය භාවිතා කරන්න.', 'OTP codes are no longer supported. Please use the reset link sent to your email.'));
-    } catch (err: any) {
-      setErrorMessage(err.message || gt('OTP කේතය වැරදියි හෝ කල් ඉකුත් වී ඇත.', 'Invalid OTP validation code.'));
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // 6. Update Password Submission Handler
+  // 5. Update Password Submission Handler
   const handleResetPasswordSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage('');

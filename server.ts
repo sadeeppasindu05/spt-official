@@ -215,6 +215,21 @@ async function startServer() {
     }
   });
 
+  // Auth callback handler for Google OAuth (sets session cookie)
+  app.get("/auth/callback", async (req, res) => {
+    const { code } = req.query;
+    if (code && typeof code === 'string') {
+      const supabaseUrl = getSupabaseUrl();
+      const supabaseAnonKey = getSupabaseAnonKey();
+      if (supabaseUrl && supabaseAnonKey) {
+        const supabaseClient = createClient(supabaseUrl, supabaseAnonKey);
+        await supabaseClient.auth.exchangeCodeForSession(code);
+      }
+    }
+    const appUrl = getAppUrl(req);
+    res.redirect(appUrl);
+  });
+
   // Forgot password — send reset link via Supabase built-in email
   app.post("/api/forgot-password", async (req, res) => {
     try {
@@ -248,7 +263,7 @@ async function startServer() {
   } else {
     const distPath = path.join(process.cwd(), 'dist');
     app.use(express.static(distPath));
-    app.get('*all', (req, res) => {
+    app.get('*', (req, res) => {
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }
