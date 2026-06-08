@@ -27,12 +27,13 @@ export default function SptUniverseGate({ onClose, onSuccess, language = 'en', r
   // Show success message if coming from recovery link
   useEffect(() => {
     if (recoveryMode) {
+      setView('reset_password');
       setSuccessMessage(gt(
         '🔐 ආරක්ෂිත සබැඳිය තහවුරු කරන ලදී. කරුණාකර නව මුරපදයක් ඇතුළත් කරන්න.',
         '🔐 Recovery link verified. Please enter a new password.'
       ));
     }
-  }, []);
+  }, [recoveryMode]);
 
   // Password Visibility toggles
   const [showPassword, setShowPassword] = useState<boolean>(false);
@@ -314,10 +315,20 @@ export default function SptUniverseGate({ onClose, onSuccess, language = 'en', r
         // Auto-login after signup confirmation
         setSuccessMessage(gt('✅ ගිණුම තහවුරු කරන ලදී! ස්වයංක්‍රීයව පිවිසෙමින්...', '✅ Account confirmed! Auto-logging in...'));
         const { data: pwData } = await supabase.auth.getSession();
-        if (!pwData.session) {
-          setView('login');
-        } else if (onSuccess) {
-          onSuccess({ email: pwData.session.user.email || email });
+        if (pwData.session) {
+          if (onSuccess) onSuccess({ email: pwData.session.user.email || email });
+        } else {
+          // No session — sign in with stored password
+          try {
+            const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({ email, password });
+            if (!signInError && signInData.session && onSuccess) {
+              onSuccess({ email: signInData.session.user.email || email });
+            } else {
+              setView('login');
+            }
+          } catch {
+            setView('login');
+          }
         }
       } else {
         // Forgot password — store reset token and show reset form

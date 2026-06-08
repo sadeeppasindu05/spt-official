@@ -74,7 +74,7 @@ function getAppUrl(req?: express.Request) {
   return 'http://localhost:3000';
 }
 
-const otpStore: Map<string, { otp: string; email: string; expiresAt: number }> = new Map();
+const otpStore: Map<string, { otp: string; email: string; userId?: string; expiresAt: number }> = new Map();
 
 function generateOtp(): string {
   return Math.floor(100000 + Math.random() * 900000).toString();
@@ -472,9 +472,10 @@ async function startServer() {
       const actionLink = linkData?.properties?.action_link;
       if (!actionLink) throw new Error('Failed to generate confirmation link');
 
-      // Generate and store OTP (expires in 10 min)
+      // Generate and store OTP (expires in 10 min) with userId for direct lookup
       const otp = generateOtp();
-      otpStore.set(email.toLowerCase(), { otp, email: email.toLowerCase(), expiresAt: Date.now() + 600000 });
+      const userId = (linkData as any)?.data?.user?.id || '';
+      otpStore.set(email.toLowerCase(), { otp, email: email.toLowerCase(), userId, expiresAt: Date.now() + 600000 });
 
       // Send email (tries SMTP 587 → 465 → SendGrid 443)
       await trySendEmail(
@@ -575,12 +576,16 @@ async function startServer() {
         realtime: { transport: ws }
       });
 
-      // Find user by email
-      const { data: userList } = await supabaseAdmin.auth.admin.listUsers();
-      const user = userList?.users?.find((u: any) => u.email?.toLowerCase() === email.toLowerCase());
-      if (!user) return res.status(404).json({ error: 'User not found' });
+      // Find user — use stored userId if available, else fallback to listUsers
+      let userId = stored.userId;
+      if (!userId) {
+        const { data: userList } = await supabaseAdmin.auth.admin.listUsers();
+        const user = userList?.users?.find((u: any) => u.email?.toLowerCase() === email.toLowerCase());
+        if (!user) return res.status(404).json({ error: 'User not found' });
+        userId = user.id;
+      }
 
-      const { error: confirmError } = await supabaseAdmin.auth.admin.updateUserById(user.id, { email_confirm: true });
+      const { error: confirmError } = await supabaseAdmin.auth.admin.updateUserById(userId, { email_confirm: true });
       if (confirmError) throw confirmError;
 
       otpStore.delete(email.toLowerCase());
