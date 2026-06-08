@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Lock, Mail, User, ShieldCheck, ArrowRight, Eye, EyeOff, Sparkles, AlertCircle, CheckCircle2, ChevronLeft, Key } from 'lucide-react';
+import { Lock, Mail, User, ArrowRight, Eye, EyeOff, Sparkles, AlertCircle, CheckCircle2, ChevronLeft, Key } from 'lucide-react';
 import { supabase } from '../supabaseClient'; 
 
-export type GateView = 'login' | 'signup' | 'otp' | 'forgot' | 'forgot_otp' | 'reset_password';
+export type GateView = 'login' | 'signup' | 'forgot' | 'reset_password';
 
 interface SptUniverseGateProps {
   onClose?: () => void;
@@ -37,15 +37,12 @@ export default function SptUniverseGate({ onClose, onSuccess, language = 'en', r
   const [password, setPassword] = useState<string>('');
   const [fullName, setFullName] = useState<string>('');
   const [rePassword, setRePassword] = useState<string>('');
-  const [otpPin, setOtpPin] = useState<string[]>(Array(6).fill(''));
-  const [pendingUserId, setPendingUserId] = useState<string>('');
 
   // Reset Password states
   const [newPassword, setNewPassword] = useState<string>('');
   const [confirmNewPassword, setConfirmNewPassword] = useState<string>('');
   const [showNewPassword, setShowNewPassword] = useState<boolean>(false);
   const [showConfirmNewPassword, setShowConfirmNewPassword] = useState<boolean>(false);
-  const [isOtpResetFlow, setIsOtpResetFlow] = useState<boolean>(false);
 
   // Language translation helper helper
   const gt = (siText: string, enText: string) => (language === 'si' ? siText : enText);
@@ -55,12 +52,6 @@ export default function SptUniverseGate({ onClose, onSuccess, language = 'en', r
     setView(newView);
     setErrorMessage('');
     setSuccessMessage('');
-    if (newView === 'otp' || newView === 'forgot_otp') {
-      setOtpPin(Array(6).fill(''));
-    }
-    if (newView !== 'reset_password') {
-      setIsOtpResetFlow(false);
-    }
   };
 
   // 1. Google Auth Logic (Real Supabase Connection)
@@ -137,7 +128,7 @@ export default function SptUniverseGate({ onClose, onSuccess, language = 'en', r
     }
   };
 
-  // 3. Signup Submit Handler (Receive Email PIN via Supabase)
+  // 3. Signup Submit Handler — auto-confirm via server (no OTP/Gmail needed)
   const handleSignUpSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage('');
@@ -161,7 +152,6 @@ export default function SptUniverseGate({ onClose, onSuccess, language = 'en', r
     }
 
     setIsLoading(true);
-    let userId = '';
     try {
       const { data, error } = await supabase.auth.signUp({
         email,
@@ -171,42 +161,25 @@ export default function SptUniverseGate({ onClose, onSuccess, language = 'en', r
         },
       });
       if (error) throw error;
-      userId = data.user?.id || '';
-      setPendingUserId(userId);
+      const userId = data.user?.id || '';
 
-      // Send OTP via our server (Gmail SMTP or Supabase fallback)
-      const otpRes = await fetch('/api/send-otp', {
+      // Auto-confirm user via server (Supabase Admin API — no SMTP needed)
+      const confirmRes = await fetch('/api/send-otp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, userId }),
       });
-      const otpData = await otpRes.json();
-      if (!otpRes.ok) throw new Error(otpData.error || 'Failed to send OTP email');
+      const confirmData = await confirmRes.json();
+      if (!confirmRes.ok) throw new Error(confirmData.error || 'Failed to activate account');
 
-      if (otpData.method === 'smtp') {
-        setSuccessMessage(gt(
-          '✅ SPT OFFICIAL: ඔබගේ ඊමේල් ලිපිනයට 6-ඉලක්කම් OTP කේතයක් එවා ඇත. කරුණාකර ඔබගේ ඊමේල් ලිපිනය පරීක්ෂා කරන්න (SPAM බලන්න).',
-          '✅ SPT OFFICIAL: A 6-digit verification code has been sent to your email. Please check your inbox (and SPAM).'
-        ));
-        setView('otp');
-      } else if (otpData.method === 'supabase') {
-        setSuccessMessage(gt(
-          '✅ SPT OFFICIAL: ඔබගේ ඊමේල් ලිපිනයට තහවුරු කිරීමේ ඊමේල් එකක් එවා ඇත. කරුණාකර ඔබගේ ඊමේල් ලිපිනය පරීක්ෂා කරන්න (SPAM බලන්න). ලින්ක් එක ක්ලික් කර ගිණුම සක්‍රිය කරන්න.',
-          '✅ SPT OFFICIAL: A confirmation email has been sent to your email. Please check your inbox (and SPAM). Click the link to activate your account.'
-        ));
-        // Wait a bit then redirect to login
-        setTimeout(() => {
-          setSuccessMessage('');
-          setView('login');
-        }, 5000);
-      } else {
-        // Dev/log mode — show OTP directly
-        setSuccessMessage(gt(
-          `✅ SPT OFFICIAL: ඔබගේ OTP කේතය: ${otpData.otp}. (Development mode - email service not configured)`,
-          `✅ SPT OFFICIAL: Your OTP code: ${otpData.otp}. (Development mode - no email service)`
-        ));
-        setView('otp');
-      }
+      setSuccessMessage(gt(
+        '✅ සුභ පැතුම්! ඔබගේ SPT OFFICIAL ගිණුම සාර්ථකව සක්‍රිය කරන ලදී! දැන් ඔබට පිවිසිය හැක.',
+        '✅ Congratulations! Your SPT OFFICIAL account has been activated! You can now log in.'
+      ));
+      setTimeout(() => {
+        setView('login');
+        setPassword('');
+      }, 2000);
     } catch (err: any) {
       setErrorMessage(err.message || gt('ලියාපදිංචි වීමේදී දෝෂයක් මතු විය.', 'Error signing up. Please try again.'));
     } finally {
@@ -214,72 +187,7 @@ export default function SptUniverseGate({ onClose, onSuccess, language = 'en', r
     }
   };
 
-  // 4. OTP PIN submission handler (Real Supabase Verification)
-  const handleOtpSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setErrorMessage('');
-    setSuccessMessage('');
-
-    const finalPin = otpPin.join('');
-    if (finalPin.length < 6 || !/^\d+$/.test(finalPin)) {
-      setErrorMessage(gt('කරුණාකර අංක 6 කින් යුත් වලංගු ආරක්ෂක PIN කේතය ඇතුළත් කරන්න.', 'Please enter a valid 6-digit verification code.'));
-      return;
-    }
-
-    setIsLoading(true);
-    try {
-      // Verify OTP via our server (confirms user via Supabase Admin API)
-      const verifyRes = await fetch('/api/verify-otp', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, otp: finalPin }),
-      });
-      const verifyData = await verifyRes.json();
-      if (!verifyRes.ok) throw new Error(verifyData.error || 'Invalid OTP');
-
-      setSuccessMessage(gt(
-        '🎉 සුබ පැතුම්! ඔබගේ SPT OFFICIAL සාමාජික ගිණුම සාර්ථකව සක්‍රිය කරන ලදී! දැන් ඔබට සියලුම SPT පහසුකම් සඳහා ප්‍රවේශ විය හැක.',
-        '🎉 Congratulations! Your SPT OFFICIAL membership account has been successfully verified & activated! You now have access to all SPT features.'
-      ));
-      if (onSuccess) {
-        onSuccess({ email, name: fullName || 'SPT Creator Member', password }, true);
-      }
-    } catch (err: any) {
-      setErrorMessage(err.message || gt('OTP කේතය වැරදියි හෝ කල් ඉකුත් වී ඇත.', 'Invalid OTP or expired session.'));
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // 5. Resend OTP Email Handler
-  const handleResendOtp = async () => {
-    setErrorMessage('');
-    setSuccessMessage('');
-    setIsLoading(true);
-    try {
-      if (!pendingUserId) throw new Error('User ID not found. Please sign up again.');
-      const otpRes = await fetch('/api/send-otp', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, userId: pendingUserId }),
-      });
-      const otpData = await otpRes.json();
-      if (!otpRes.ok) throw new Error(otpData.error || 'Failed to resend OTP');
-      if (otpData.method === 'smtp') {
-        setSuccessMessage(gt('✅ OTP කේතය නැවත එවා ඇත. කරුණාකර ඔබගේ ඊමේල් ලිපිනය පරීක්ෂා කරන්න (SPAM බලන්න).', '✅ OTP code resent. Please check your inbox (and SPAM folder).'));
-      } else if (otpData.method === 'supabase') {
-        setSuccessMessage(gt('✅ තහවුරු කිරීමේ ඊමේල් එක නැවත එවා ඇත. කරුණාකර ඔබගේ ඊමේල් ලිපිනය පරීක්ෂා කරන්න.', '✅ Confirmation email resent. Please check your inbox.'));
-      } else {
-        setSuccessMessage(gt(`✅ ඔබගේ OTP කේතය: ${otpData.otp}`, `✅ Your OTP code: ${otpData.otp}`));
-      }
-    } catch (err: any) {
-      setErrorMessage(err.message || gt('OTP කේතය නැවත එවීමට අපොහොසත් විය.', 'Failed to resend OTP code.'));
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // 6. Forgot Password Handler — sends OTP + reset link via our server
+  // 4. Forgot Password Handler — sends reset link via Supabase built-in email
   const handleForgotSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage('');
@@ -298,22 +206,13 @@ export default function SptUniverseGate({ onClose, onSuccess, language = 'en', r
         body: JSON.stringify({ email }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Failed to send reset code');
+      if (!res.ok) throw new Error(data.error || 'Failed to send reset link');
 
-      setSuccessMessage(
-        data.otp
-          ? gt(
-              `🔐 SPT OFFICIAL: ඔබගේ OTP කේතය: ${data.otp}. ඔබගේ ඊමේල් එකේ එවා ඇති සබැඳිය ක්ලික් කරන්න.`,
-              `🔐 SPT OFFICIAL: Your OTP code: ${data.otp}. Also click the reset link in your email.`
-            )
-          : gt(
-              '🔐 SPT OFFICIAL: ඔබගේ ඊමේල් ලිපිනයට මුරපදය යළි සැකසීමේ සබැඳියක් එවා ඇත. කරුණාකර ඔබගේ Inbox පරීක්ෂා කරන්න (SPAM බලන්න). සබැඳිය ක්ලික් කළ පසු නව මුරපදයක් ඇතුළත් කළ හැක.',
-              '🔐 SPT OFFICIAL: A password reset link has been sent to your email. Please check your inbox (and SPAM folder). Click the link to set a new password.'
-            )
-      );
-      setTimeout(() => {
-        handleViewChange('forgot_otp');
-      }, 1500);
+      setSuccessMessage(gt(
+        '🔐 SPT OFFICIAL: ඔබගේ ඊමේල් ලිපිනයට මුරපදය යළි සැකසීමේ සබැඳියක් එවා ඇත. කරුණාකර ඔබගේ Inbox පරීක්ෂා කරන්න (SPAM බලන්න). සබැඳිය ක්ලික් කළ පසු නව මුරපදයක් ඇතුළත් කළ හැක.',
+        '🔐 SPT OFFICIAL: A password reset link has been sent to your email. Please check your inbox (and SPAM folder). Click the link to set a new password.'
+      ));
+      setTimeout(() => handleViewChange('login'), 4000);
     } catch (err: any) {
       setErrorMessage(err.message || gt('ඊමේල් එක යැවීමේදී දෝෂයක් මතු විය.', 'Error sending recovery transmission.'));
     } finally {
@@ -343,22 +242,18 @@ export default function SptUniverseGate({ onClose, onSuccess, language = 'en', r
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Invalid OTP');
 
-      setIsOtpResetFlow(true);
-      setSuccessMessage(gt(
-        '🔐 SPT OFFICIAL: ආරක්ෂිත කේතය සාර්ථකව තහවුරු විය! දැන් ඔබට නව මුරපදය ඇතුළත් කළ හැක.',
-        '🔐 SPT OFFICIAL: Security code verified! You can now set a new password.'
-      ));
-      setTimeout(() => {
-        handleViewChange('reset_password');
-      }, 1500);
+      // No OTP flow — reset password via recovery link only
+      setIsOtpResetFlow(false);
+      handleViewChange('login');
+      setErrorMessage(gt('OTP කේතය තවදුරටත් සහාය නොදක්වයි. කරුණාකර ඔබගේ ඊමේල් ලිපිනයට එවා ඇති සබැඳිය භාවිතා කරන්න.', 'OTP codes are no longer supported. Please use the reset link sent to your email.'));
     } catch (err: any) {
-      setErrorMessage(err.message || gt('OTP කේතය වැරදියි හෝ කල් ඉකුත් වී ඇත.', 'Invalid OTP validation code. Check status logs.'));
+      setErrorMessage(err.message || gt('OTP කේතය වැරදියි හෝ කල් ඉකුත් වී ඇත.', 'Invalid OTP validation code.'));
     } finally {
       setIsLoading(false);
     }
   };
 
-  // 7. Update Password Submission Handler
+  // 6. Update Password Submission Handler
   const handleResetPasswordSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage('');
@@ -385,18 +280,8 @@ export default function SptUniverseGate({ onClose, onSuccess, language = 'en', r
 
     setIsLoading(true);
     try {
-      if (isOtpResetFlow) {
-        const res = await fetch('/api/reset-password-with-otp', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email, newPassword }),
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'Failed to reset password');
-      } else {
-        const { error } = await supabase.auth.updateUser({ password: newPassword });
-        if (error) throw error;
-      }
+      const { error } = await supabase.auth.updateUser({ password: newPassword });
+      if (error) throw error;
 
       setSuccessMessage(gt(
         '✅ සුභ පැතුම්! ඔබගේ SPT OFFICIAL ගිණුමේ මුරපදය සාර්ථකව යාවත්කාලීන කරන ලදී!',
@@ -404,7 +289,6 @@ export default function SptUniverseGate({ onClose, onSuccess, language = 'en', r
       ));
       
       setTimeout(async () => {
-        setIsOtpResetFlow(false);
         const resolvedEmail = email || (await supabase.auth.getSession()).data.session?.user?.email || '';
         if (onSuccess) {
           onSuccess({ email: resolvedEmail, name: resolvedEmail.split('@')[0] });
@@ -414,26 +298,6 @@ export default function SptUniverseGate({ onClose, onSuccess, language = 'en', r
       setErrorMessage(err.message || gt('මුරපදය රීසෙට් කිරීමේදී දෝෂයක් සිදු විය.', 'Unable to rewrite credential layers in local directory.'));
     } finally {
       setIsLoading(false);
-    }
-  };
-
-  // Custom function to handle OTP input movement
-  const handlePinChange = (element: HTMLInputElement, index: number) => {
-    if (isNaN(Number(element.value))) return;
-
-    const newOtp = [...otpPin];
-    newOtp[index] = element.value;
-    setOtpPin(newOtp);
-
-    // Focus next input automatically
-    if (element.value !== '' && element.nextSibling) {
-      (element.nextSibling as HTMLInputElement).focus();
-    }
-  };
-
-  const handlePinKeyDown = (e: React.KeyboardEvent<HTMLInputElement>, index: number) => {
-    if (e.key === 'Backspace' && !otpPin[index] && e.currentTarget.previousSibling) {
-      (e.currentTarget.previousSibling as HTMLInputElement).focus();
     }
   };
 
@@ -770,74 +634,6 @@ export default function SptUniverseGate({ onClose, onSuccess, language = 'en', r
             )}
 
             {/* 3. OTP VERIFICATION VIEW */}
-            {view === 'otp' && (
-              <motion.div
-                key="otp-view"
-                initial={{ opacity: 0, x: -12 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: 12 }}
-                transition={{ duration: 0.25 }}
-              >
-                <div className="mb-6">
-                  <h2 className="text-xl font-bold font-sans tracking-tight text-white flex items-center gap-2">
-                    {gt('ආරක්ෂිත PIN එක ඇතුළත් කරන්න', 'Enter Security PIN')}{' '}
-                    <ShieldCheck className="w-5 h-5 text-amber-400" />
-                  </h2>
-                  <p className="text-xs text-slate-300 mt-1 leading-relaxed">
-                    {gt('ඔබගේ ඊමේල් ලිපිනයට ලැබුණු අංක 6 ආරක්ෂිත සංකේතය ඇතුළත් කරන්න.', 'Enter the 6-digit security code sent to your email.')}
-                  </p>
-                </div>
-
-                <form onSubmit={handleOtpSubmit} className="space-y-5">
-                  <div className="grid grid-cols-6 gap-2 max-w-[260px] mx-auto">
-                    {otpPin.map((data, index) => (
-                      <input
-                        key={index}
-                        type="text"
-                        maxLength={1}
-                        value={data}
-                        onChange={e => handlePinChange(e.target, index)}
-                        onKeyDown={e => handlePinKeyDown(e, index)}
-                        className="w-full h-12 text-center text-lg font-bold font-mono bg-white/[0.04] border border-white/10 rounded-xl text-white focus:outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-500/25 transition-all backdrop-blur-md"
-                      />
-                    ))}
-                  </div>
-
-                  <button
-                    type="submit"
-                    disabled={isLoading}
-                    className="w-full py-3 bg-gradient-to-r from-amber-400 to-yellow-500 hover:from-amber-300 hover:to-yellow-400 text-neutral-950 font-bold text-xs font-mono uppercase tracking-widest rounded-xl transition-all duration-300 shadow-[0_4px_20px_rgba(245,158,11,0.25)] flex items-center justify-center gap-2 cursor-pointer"
-                  >
-                    {isLoading ? (
-                      <div className="w-4 h-4 border-2 border-neutral-950 border-t-transparent rounded-full animate-spin"></div>
-                    ) : (
-                      <>
-                        {gt('කේතය තහවුරු කරන්න', 'VERIFY PIN & ACTIVATE ACCOUNT')} <ArrowRight className="w-4 h-4" />
-                      </>
-                    )}
-                  </button>
-                </form>
-
-                <div className="mt-4 text-center space-y-2">
-                  <button
-                    onClick={handleResendOtp}
-                    disabled={isLoading}
-                    className="text-[11px] font-mono text-amber-400 hover:text-amber-300 underline underline-offset-2 mx-auto cursor-pointer disabled:opacity-50"
-                  >
-                    {isLoading ? gt('යවමින්...', 'Sending...') : gt('OTP කේතය නැවත එවන්න', 'Resend OTP Code')}
-                  </button>
-                  <div>
-                    <button
-                      onClick={() => handleViewChange('signup')}
-                      className="text-[10px] font-mono text-slate-400 hover:text-white flex items-center justify-center gap-1 mx-auto cursor-pointer"
-                    >
-                      <ChevronLeft className="w-3.5 h-3.5" /> {gt('නැවත ලියාපදිංචි වීමට', 'Back to Sign Up')}
-                    </button>
-                  </div>
-                </div>
-              </motion.div>
-            )}
-
             {/* 4. FORGOT PASSWORD VIEW */}
             {view === 'forgot' && (
               <motion.div
@@ -902,97 +698,7 @@ export default function SptUniverseGate({ onClose, onSuccess, language = 'en', r
             )}
 
             {/* 5. FORGOT PASSWORD OTP VIEW */}
-            {view === 'forgot_otp' && (
-              <motion.div
-                key="forgot-otp-view"
-                initial={{ opacity: 0, x: -12 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: 12 }}
-                transition={{ duration: 0.25 }}
-              >
-                <div className="mb-6">
-                  <h2 className="text-xl font-bold font-sans tracking-tight text-white flex items-center gap-2">
-                    {gt('ප්‍රතිසාධන කේතය ඇතුළත් කරන්න', 'Enter Recovery Code')}{' '}
-                    <ShieldCheck className="w-5 h-5 text-amber-400" />
-                  </h2>
-                  <p className="text-xs text-slate-300 mt-1 leading-relaxed">
-                    {gt('ඔබගේ ඊමේල් ලිපිනයට ලැබුණු අංක 6 ආරක්ෂිත Reset සංකේතය (OTP) ඇතුළත් කරන්න.', 'Enter the 6-digit password reset code (OTP) sent to your email.')}
-                  </p>
-                </div>
-
-                <form onSubmit={handleForgotOtpSubmit} className="space-y-5">
-                  <div className="grid grid-cols-6 gap-2 max-w-[260px] mx-auto">
-                    {otpPin.map((data, index) => (
-                      <input
-                        key={index}
-                        type="text"
-                        maxLength={1}
-                        value={data}
-                        onChange={e => handlePinChange(e.target, index)}
-                        onKeyDown={e => handlePinKeyDown(e, index)}
-                        className="w-full h-12 text-center text-lg font-bold font-mono bg-white/[0.04] border border-white/10 rounded-xl text-white focus:outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-500/25 transition-all backdrop-blur-md"
-                      />
-                    ))}
-                  </div>
-
-                  <button
-                    type="submit"
-                    disabled={isLoading}
-                    className="w-full py-3 bg-gradient-to-r from-amber-400 to-yellow-500 hover:from-amber-300 hover:to-yellow-400 text-neutral-950 font-bold text-xs font-mono uppercase tracking-widest rounded-xl transition-all duration-300 shadow-[0_4px_20px_rgba(245,158,11,0.25)] flex items-center justify-center gap-2 cursor-pointer"
-                  >
-                    {isLoading ? (
-                      <div className="w-4 h-4 border-2 border-neutral-950 border-t-transparent rounded-full animate-spin"></div>
-                    ) : (
-                      <>
-                        {gt('ආරක්ෂිත කේතය තහවුරු කරන්න', 'CONFIRM SECURITY CODE')} <ArrowRight className="w-4 h-4" />
-                      </>
-                    )}
-                  </button>
-                </form>
-
-                <div className="mt-4 text-center space-y-2">
-                  <button
-                    onClick={async () => {
-                      setErrorMessage('');
-                      setSuccessMessage('');
-                      setIsLoading(true);
-                      try {
-                        const res = await fetch('/api/forgot-password', {
-                          method: 'POST',
-                          headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({ email }),
-                        });
-                        const data = await res.json();
-                        if (!res.ok) throw new Error(data.error || 'Failed to resend');
-                        setSuccessMessage(
-                          data.otp
-                            ? gt(`✅ නව Reset කේතය: ${data.otp}`, `✅ New Reset Code: ${data.otp}`)
-                            : gt('✅ Reset කේතය නැවත එවා ඇත. SPAM බලන්න.', '✅ Reset code resent. Check SPAM.')
-                        );
-                      } catch (err: any) {
-                        setErrorMessage(err.message || gt('නැවත එවීමට අපොහොසත් විය.', 'Failed to resend.'));
-                      } finally {
-                        setIsLoading(false);
-                      }
-                    }}
-                    disabled={isLoading}
-                    className="text-[11px] font-mono text-amber-400 hover:text-amber-300 underline underline-offset-2 mx-auto cursor-pointer disabled:opacity-50"
-                  >
-                    {isLoading ? gt('යවමින්...', 'Sending...') : gt('Reset කේතය නැවත එවන්න', 'Resend Reset Code')}
-                  </button>
-                  <div>
-                    <button
-                      onClick={() => handleViewChange('forgot')}
-                      className="text-[10px] font-mono text-slate-400 hover:text-white flex items-center justify-center gap-1 mx-auto cursor-pointer"
-                    >
-                      <ChevronLeft className="w-3.5 h-3.5" /> {gt('නැවත ඊමේල් ඇතුළත් කිරීමට', 'Back to Email Entry')}
-                    </button>
-                  </div>
-                </div>
-              </motion.div>
-            )}
-
-            {/* 6. RESET PASSWORD FORM */}
+            {/* 5. RESET PASSWORD FORM */}
             {view === 'reset_password' && (
               <motion.div
                 key="reset-password-view"

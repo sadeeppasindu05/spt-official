@@ -2,7 +2,6 @@ import express from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
-import nodemailer from "nodemailer";
 import { createClient } from "@supabase/supabase-js";
 import dotenv from "dotenv";
 import crypto from "crypto";
@@ -54,6 +53,24 @@ function getAiClient(feature: string = 'chat'): GoogleGenAI {
 
 const chatSessions: Record<string, any> = {};
 
+function getSupabaseUrl() {
+  return process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
+}
+
+function getSupabaseAnonKey() {
+  return process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
+}
+
+function getSupabaseServiceRole() {
+  return process.env.SUPABASE_SERVICE_ROLE_KEY;
+}
+
+function getAppUrl(req?: express.Request) {
+  if (process.env.APP_URL) return process.env.APP_URL;
+  if (req) return `${req.protocol}://${req.get('host')}`;
+  return 'http://localhost:3000';
+}
+
 async function startServer() {
   const app = express();
   const PORT = parseInt(process.env.PORT || "3000");
@@ -72,8 +89,8 @@ async function startServer() {
   // Supabase runtime config endpoint (no auth needed)
   app.get("/api/config", (req, res) => {
     res.json({
-      supabaseUrl: process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "",
-      supabaseAnonKey: process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || ""
+      supabaseUrl: getSupabaseUrl(),
+      supabaseAnonKey: getSupabaseAnonKey()
     });
   });
 
@@ -175,251 +192,49 @@ async function startServer() {
     }
   });
 
-  // OTP in-memory store with automatic cleanup
-  const otpStore = new Map<string, { otp: string; userId: string; expires: number }>();
-  
-  // Clean expired OTPs every 5 minutes
-  setInterval(() => {
-    const now = Date.now();
-    for (const [key, val] of otpStore) {
-      if (now > val.expires) otpStore.delete(key);
-    }
-  }, 300000);
-
-  function getTransporter() {
-    const email = process.env.GMAIL_EMAIL || 'sadeeppasindu0218@gmail.com';
-    const pass = process.env.GMAIL_APP_PASSWORD;
-    if (!pass) return null;
-    return nodemailer.createTransport({
-      host: 'smtp.gmail.com',
-      port: 587,
-      secure: false,
-      requireTLS: true,
-      auth: { user: email, pass },
-      connectionTimeout: 15000,
-      greetingTimeout: 15000,
-      socketTimeout: 20000,
-    });
-  }
-
-  // Send OTP via email (Gmail SMTP), fallback to Supabase built-in email
+  // Signup — confirm user via Supabase Admin API (no SMTP needed)
   app.post("/api/send-otp", async (req, res) => {
     try {
       const { email, userId } = req.body;
       if (!email || !userId) return res.status(400).json({ error: 'Email and userId required' });
-      if (typeof email !== 'string' || email.length > 320) return res.status(400).json({ error: 'Invalid email' });
 
-      const otp = Math.floor(100000 + Math.random() * 900000).toString();
-      otpStore.set(email, { otp, userId, expires: Date.now() + 600000 });
-
-      const transporter = getTransporter();
-
-      if (transporter) {
-        // Gmail SMTP configured — send custom OTP email
-        await transporter.sendMail({
-          from: `"SPT OFFICIAL" <sadeeppasindu0218@gmail.com>`,
-          to: email,
-          subject: 'SPT OFFICIAL - Your Verification Code',
-          html: `
-            <div style="background:#0a0a16;padding:40px;font-family:sans-serif;">
-              <div style="max-width:480px;margin:0 auto;background:#1a1a2e;border-radius:16px;padding:32px;border:1px solid #333;">
-                <h1 style="color:#00f0ff;font-size:24px;text-align:center;">SPT OFFICIAL</h1>
-                <p style="color:#888;text-align:center;font-size:12px;">Sadeep Pasindu Creative Universe</p>
-                <hr style="border-color:#333;margin:20px 0;">
-                <h2 style="color:#fff;font-size:18px;">Your Verification Code</h2>
-                <p style="color:#aaa;font-size:14px;line-height:1.6;">Use the code below to verify your account:</p>
-                <div style="text-align:center;margin:30px 0;padding:20px;background:#0a0a16;border-radius:12px;letter-spacing:8px;">
-                  <span style="font-size:36px;font-weight:bold;color:#00f0ff;font-family:monospace;">${otp}</span>
-                </div>
-                <p style="color:#666;font-size:12px;">This code expires in <strong style="color:#fcd34d;">10 minutes</strong>.</p>
-                <hr style="border-color:#222;margin:20px 0;">
-                <p style="color:#555;font-size:10px;text-align:center;">&copy; 2026 SPT OFFICIAL. All rights reserved.</p>
-              </div>
-            </div>`,
-        });
-        return res.json({ success: true, method: 'smtp' });
-      }
-
-      // Fallback: use Supabase built-in email confirmation
-      const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
-      const supabaseAnonKey = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY;
-      if (supabaseUrl && supabaseAnonKey) {
-        const supabaseClient = createClient(supabaseUrl, supabaseAnonKey);
-        const { error } = await supabaseClient.auth.resend({
-          type: 'signup',
-          email,
-          options: { emailRedirectTo: `${process.env.APP_URL || ''}/auth/callback` },
-        });
-        if (error) throw error;
-        console.log(`OTP for ${email}: ${otp} (Supabase email fallback)`);
-        return res.json({ success: true, method: 'supabase', otp }); // otp sent back for dev, remove in prod
-      }
-
-      // Last resort: log OTP (only useful in dev)
-      console.log(`OTP for ${email}: ${otp} (no email service configured)`);
-      return res.json({ success: true, method: 'log', otp });
-    } catch (err: any) {
-      console.error("Send OTP Error:", err);
-      res.status(500).json({ error: err.message || 'Failed to send OTP' });
-    }
-  });
-
-  // Verify OTP and confirm user
-  app.post("/api/verify-otp", async (req, res) => {
-    try {
-      const { email, otp } = req.body;
-      if (!email || !otp) return res.status(400).json({ error: 'Email and OTP required' });
-
-      const stored = otpStore.get(email);
-      if (!stored) return res.status(400).json({ error: 'No OTP found. Request a new one.' });
-      if (Date.now() > stored.expires) {
-        otpStore.delete(email);
-        return res.status(400).json({ error: 'OTP expired. Request a new one.' });
-      }
-      if (stored.otp !== otp) return res.status(400).json({ error: 'Invalid OTP code.' });
-
-      const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
-      const serviceRole = process.env.SUPABASE_SERVICE_ROLE_KEY;
+      const supabaseUrl = getSupabaseUrl();
+      const serviceRole = getSupabaseServiceRole();
       if (!supabaseUrl || !serviceRole) return res.status(500).json({ error: 'Server config error' });
 
       const supabaseAdmin = createClient(supabaseUrl, serviceRole, {
         auth: { autoRefreshToken: false, persistSession: false }
       });
-      const { error } = await supabaseAdmin.auth.admin.updateUserById(stored.userId, { email_confirm: true });
+      const { error } = await supabaseAdmin.auth.admin.updateUserById(userId, { email_confirm: true });
       if (error) throw error;
 
-      otpStore.delete(email);
-      res.json({ success: true });
+      res.json({ success: true, method: 'auto' });
     } catch (err: any) {
-      console.error("Verify OTP Error:", err);
-      res.status(500).json({ error: err.message || 'Failed to verify OTP' });
+      console.error("Send OTP Error:", err);
+      res.status(500).json({ error: err.message || 'Failed to activate account' });
     }
   });
 
-  // Forgot password OTP store
-  const resetOtpStore = new Map<string, { otp: string; email: string; expires: number }>();
-  setInterval(() => {
-    const now = Date.now();
-    for (const [key, val] of resetOtpStore) {
-      if (now > val.expires) resetOtpStore.delete(key);
-    }
-  }, 300000);
-
-  // Send forgot password email with both reset link (via Supabase) and OTP (via SMTP)
+  // Forgot password — send reset link via Supabase built-in email
   app.post("/api/forgot-password", async (req, res) => {
     try {
       const { email } = req.body;
       if (!email) return res.status(400).json({ error: 'Email required' });
 
-      const otp = Math.floor(100000 + Math.random() * 900000).toString();
-      resetOtpStore.set(email, { otp, email, expires: Date.now() + 600000 });
+      const supabaseUrl = getSupabaseUrl();
+      const supabaseAnonKey = getSupabaseAnonKey();
+      if (!supabaseUrl || !supabaseAnonKey) return res.status(500).json({ error: 'Server config error' });
 
-      // Send reset link via Supabase
-      const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
-      const supabaseAnonKey = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY;
-      let linkSent = false;
-      if (supabaseUrl && supabaseAnonKey) {
-        const supabaseClient = createClient(supabaseUrl, supabaseAnonKey);
-        const { error } = await supabaseClient.auth.resetPasswordForEmail(email, {
-          redirectTo: `${process.env.APP_URL || ''}/reset-password`,
-        });
-        if (!error) linkSent = true;
-      }
-
-      // Send OTP via SMTP if configured
-      const transporter = getTransporter();
-      let otpSent = false;
-      if (transporter) {
-        try {
-          await transporter.sendMail({
-            from: `"SPT OFFICIAL" <sadeeppasindu0218@gmail.com>`,
-            to: email,
-            subject: 'SPT OFFICIAL - Password Reset Code',
-            html: `
-              <div style="background:#0a0a16;padding:40px;font-family:sans-serif;">
-                <div style="max-width:480px;margin:0 auto;background:#1a1a2e;border-radius:16px;padding:32px;border:1px solid #333;">
-                  <h1 style="color:#00f0ff;font-size:24px;text-align:center;">SPT OFFICIAL</h1>
-                  <p style="color:#888;text-align:center;font-size:12px;">Password Reset Request</p>
-                  <hr style="border-color:#333;margin:20px 0;">
-                  <p style="color:#aaa;font-size:14px;line-height:1.6;">We received a request to reset your SPT OFFICIAL account password.</p>
-                  <p style="color:#aaa;font-size:14px;line-height:1.6;">Use the code below to reset your password, or click the link in the email we sent separately.</p>
-                  <div style="text-align:center;margin:30px 0;padding:20px;background:#0a0a16;border-radius:12px;letter-spacing:8px;">
-                    <span style="font-size:36px;font-weight:bold;color:#00f0ff;font-family:monospace;">${otp}</span>
-                  </div>
-                  <p style="color:#666;font-size:12px;">This code expires in <strong style="color:#fcd34d;">10 minutes</strong>.</p>
-                  <hr style="border-color:#222;margin:20px 0;">
-                  <p style="color:#555;font-size:10px;text-align:center;">&copy; 2026 SPT OFFICIAL. All rights reserved.</p>
-                </div>
-              </div>`,
-          });
-          otpSent = true;
-        } catch (e) {
-          console.error("Failed to send OTP email for forgot password:", e);
-        }
-      }
-
-      if (!linkSent && !otpSent) {
-        console.log(`Reset OTP for ${email}: ${otp} (no email service)`);
-      }
-
-      res.json({ success: true, linkSent, otpSent, otp: !otpSent && !linkSent ? otp : undefined });
-    } catch (err: any) {
-      console.error("Forgot password error:", err);
-      res.status(500).json({ error: err.message || 'Failed to process request' });
-    }
-  });
-
-  // Verify reset OTP
-  app.post("/api/verify-reset-otp", async (req, res) => {
-    try {
-      const { email, otp } = req.body;
-      if (!email || !otp) return res.status(400).json({ error: 'Email and OTP required' });
-
-      const stored = resetOtpStore.get(email);
-      if (!stored) return res.status(400).json({ error: 'No OTP found. Request a new one.' });
-      if (Date.now() > stored.expires) {
-        resetOtpStore.delete(email);
-        return res.status(400).json({ error: 'OTP expired. Request a new one.' });
-      }
-      if (stored.otp !== otp) return res.status(400).json({ error: 'Invalid OTP code.' });
-
-      resetOtpStore.delete(email);
-      res.json({ success: true, email });
-    } catch (err: any) {
-      console.error("Verify reset OTP error:", err);
-      res.status(500).json({ error: err.message || 'Failed to verify OTP' });
-    }
-  });
-
-  // Reset password with OTP (uses admin API)
-  app.post("/api/reset-password-with-otp", async (req, res) => {
-    try {
-      const { email, newPassword } = req.body;
-      if (!email || !newPassword) return res.status(400).json({ error: 'Email and new password required' });
-      if (newPassword.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters' });
-      if (newPassword.length > 16) return res.status(400).json({ error: 'Password must be at most 16 characters' });
-
-      const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
-      const serviceRole = process.env.SUPABASE_SERVICE_ROLE_KEY;
-      if (!supabaseUrl || !serviceRole) return res.status(500).json({ error: 'Server config error' });
-
-      const supabaseAdmin = createClient(supabaseUrl, serviceRole, {
-        auth: { autoRefreshToken: false, persistSession: false }
+      const supabaseClient = createClient(supabaseUrl, supabaseAnonKey);
+      const { error } = await supabaseClient.auth.resetPasswordForEmail(email, {
+        redirectTo: `${getAppUrl(req)}/reset-password`,
       });
-
-      // Find user by email using admin API
-      const { data: users, error: listError } = await supabaseAdmin.auth.admin.listUsers();
-      if (listError) throw listError;
-      const user = users.users.find((u: any) => u.email === email);
-      if (!user) return res.status(404).json({ error: 'User not found' });
-
-      const { error } = await supabaseAdmin.auth.admin.updateUserById(user.id, { password: newPassword });
       if (error) throw error;
 
-      res.json({ success: true });
+      res.json({ success: true, linkSent: true });
     } catch (err: any) {
-      console.error("Reset password error:", err);
-      res.status(500).json({ error: err.message || 'Failed to reset password' });
+      console.error("Forgot password error:", err);
+      res.status(500).json({ error: err.message || 'Failed to send reset link' });
     }
   });
 
