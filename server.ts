@@ -86,6 +86,9 @@ function getTransporter() {
     return nodemailer.createTransport({
       host: 'smtp.gmail.com', port: 587, secure: false,
       auth: { user: gmailUser, pass: gmailPass },
+      connectionTimeout: 3000,
+      greetingTimeout: 3000,
+      socketTimeout: 5000,
     });
   }
   return null;
@@ -98,6 +101,9 @@ function getTransporterSsl() {
     return nodemailer.createTransport({
       host: 'smtp.gmail.com', port: 465, secure: true,
       auth: { user: gmailUser, pass: gmailPass },
+      connectionTimeout: 3000,
+      greetingTimeout: 3000,
+      socketTimeout: 5000,
     });
   }
   return null;
@@ -272,6 +278,15 @@ function buildResetEmailHtml(actionLink: string, otp: string): string {
 }
 
 async function trySendEmail(to: string, subject: string, html: string): Promise<void> {
+  // Try Gmail REST API via HTTPS (port 443) FIRST — most likely to work on HF Spaces
+  if (process.env.GMAIL_CLIENT_ID && process.env.GMAIL_CLIENT_SECRET && process.env.GMAIL_REFRESH_TOKEN) {
+    try {
+      await sendViaGmailApi(to, subject, html);
+      return;
+    } catch (gmailErr) {
+      console.warn("Gmail API failed:", (gmailErr as Error).message);
+    }
+  }
   // Try SMTP port 587
   const transporter = getTransporter();
   if (transporter) {
@@ -295,16 +310,7 @@ async function trySendEmail(to: string, subject: string, html: string): Promise<
       });
       return;
     } catch (sslErr) {
-      console.warn("SMTP 465 failed, trying Gmail API:", (sslErr as Error).message);
-    }
-  }
-  // Try Gmail REST API via HTTPS (port 443)
-  if (process.env.GMAIL_CLIENT_ID && process.env.GMAIL_CLIENT_SECRET && process.env.GMAIL_REFRESH_TOKEN) {
-    try {
-      await sendViaGmailApi(to, subject, html);
-      return;
-    } catch (gmailErr) {
-      console.warn("Gmail API failed, trying SendGrid:", (gmailErr as Error).message);
+      console.warn("SMTP 465 failed:", (sslErr as Error).message);
     }
   }
   // Try SendGrid HTTPS API (port 443)
@@ -662,7 +668,7 @@ async function startServer() {
   });
 
   // Test email config (admin-protected)
-  app.post("/api/test-email", async (req, res) => {
+  app.post("/api/test-email", requireAdmin, async (req, res) => {
     try {
       const { email } = req.body;
       if (!email) return res.status(400).json({ error: 'Test email address required' });
