@@ -6,6 +6,7 @@ import { createClient } from "@supabase/supabase-js";
 import dotenv from "dotenv";
 import crypto from "crypto";
 import nodemailer from "nodemailer";
+import https from "https";
 
 dotenv.config();
 
@@ -81,8 +82,6 @@ function generateOtp(): string {
 function getTransporter() {
   const gmailUser = process.env.GMAIL_EMAIL;
   const gmailPass = process.env.GMAIL_APP_PASSWORD;
-  const supabaseUrl = getSupabaseUrl();
-  const serviceRole = getSupabaseServiceRole();
   if (gmailUser && gmailPass) {
     return nodemailer.createTransport({
       host: 'smtp.gmail.com', port: 587, secure: false,
@@ -92,25 +91,231 @@ function getTransporter() {
   return null;
 }
 
-async function sendRecoveryEmail(email: string, resetLink: string): Promise<boolean> {
-  const transporter = getTransporter();
-  if (!transporter) return false;
-  try {
-    await transporter.sendMail({
-      from: `"SPT OFFICIAL" <${process.env.GMAIL_EMAIL}>`,
-      to: email,
-      subject: 'SPT OFFICIAL - Password Reset Link',
-      html: `<div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:24px;background:#0f172a;color:#e2e8f0;border-radius:12px">
-        <h2 style="color:#06b6d4;margin:0 0 16px">SPT OFFICIAL</h2>
-        <p>Click the button below to reset your password. This link expires in 1 hour.</p>
-        <a href="${resetLink}" style="display:inline-block;padding:12px 24px;background:#06b6d4;color:#0f172a;text-decoration:none;font-weight:bold;border-radius:8px;margin:16px 0">Reset Password</a>
-        <p style="color:#94a3b8;font-size:12px">If you didn't request this, ignore this email.</p>
-      </div>`,
+function getTransporterSsl() {
+  const gmailUser = process.env.GMAIL_EMAIL;
+  const gmailPass = process.env.GMAIL_APP_PASSWORD;
+  if (gmailUser && gmailPass) {
+    return nodemailer.createTransport({
+      host: 'smtp.gmail.com', port: 465, secure: true,
+      auth: { user: gmailUser, pass: gmailPass },
     });
-    return true;
-  } catch {
-    return false;
   }
+  return null;
+}
+
+let _gmailAccessToken: string | null = null;
+let _gmailTokenExpiry = 0;
+
+async function getGmailAccessToken(): Promise<string> {
+  if (_gmailAccessToken && Date.now() < _gmailTokenExpiry) return _gmailAccessToken;
+
+  const clientId = process.env.GMAIL_CLIENT_ID;
+  const clientSecret = process.env.GMAIL_CLIENT_SECRET;
+  const refreshToken = process.env.GMAIL_REFRESH_TOKEN;
+  if (!clientId || !clientSecret || !refreshToken) {
+    throw new Error('GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET, GMAIL_REFRESH_TOKEN required');
+  }
+
+  const data = `client_id=${encodeURIComponent(clientId)}&client_secret=${encodeURIComponent(clientSecret)}&refresh_token=${encodeURIComponent(refreshToken)}&grant_type=refresh_token`;
+
+  const token: { access_token: string; expires_in: number } = await new Promise((resolve, reject) => {
+    const req = https.request({
+      hostname: 'oauth2.googleapis.com',
+      port: 443,
+      path: '/token',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Content-Length': Buffer.byteLength(data),
+      },
+    }, (res) => {
+      let body = '';
+      res.on('data', (chunk: string) => body += chunk);
+      res.on('end', () => {
+        if (res.statusCode === 200) resolve(JSON.parse(body));
+        else reject(new Error(`Token error ${res.statusCode}: ${body}`));
+      });
+    });
+    req.on('error', reject);
+    req.write(data);
+    req.end();
+  });
+
+  _gmailAccessToken = token.access_token;
+  _gmailTokenExpiry = Date.now() + (token.expires_in - 60) * 1000;
+  return _gmailAccessToken;
+}
+
+async function sendViaGmailApi(to: string, subject: string, html: string): Promise<void> {
+  const fromEmail = process.env.GMAIL_EMAIL;
+  if (!fromEmail) throw new Error('GMAIL_EMAIL not configured');
+
+  const accessToken = await getGmailAccessToken();
+
+  // Build RFC 2822 message
+  const boundary = `boundary_${Date.now()}`;
+  const message = [
+    `From: "SPT OFFICIAL" <${fromEmail}>`,
+    `To: ${to}`,
+    `Subject: ${subject}`,
+    'MIME-Version: 1.0',
+    `Content-Type: multipart/alternative; boundary="${boundary}"`,
+    '',
+    `--${boundary}`,
+    'Content-Type: text/plain; charset=UTF-8',
+    '',
+    'Please view this email in an HTML-compatible email client.',
+    '',
+    `--${boundary}`,
+    'Content-Type: text/html; charset=UTF-8',
+    'Content-Transfer-Encoding: 7bit',
+    '',
+    html,
+    '',
+    `--${boundary}--`,
+  ].join('\r\n');
+
+  const raw = Buffer.from(message).toString('base64url');
+
+  const payload = JSON.stringify({ raw });
+
+  await new Promise<void>((resolve, reject) => {
+    const req = https.request({
+      hostname: 'gmail.googleapis.com',
+      port: 443,
+      path: '/gmail/v1/users/me/messages/send',
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(payload),
+      },
+    }, (res) => {
+      let body = '';
+      res.on('data', (chunk: string) => body += chunk);
+      res.on('end', () => {
+        if (res.statusCode === 200) resolve();
+        else reject(new Error(`Gmail API error ${res.statusCode}: ${body}`));
+      });
+    });
+    req.on('error', reject);
+    req.write(payload);
+    req.end();
+  });
+}
+
+async function sendEmailViaHttps(to: string, subject: string, html: string): Promise<void> {
+  const apiKey = process.env.SENDGRID_API_KEY;
+  if (!apiKey) throw new Error('SENDGRID_API_KEY not configured');
+  const fromEmail = process.env.GMAIL_EMAIL || 'noreply@spt-official.com';
+  const data = JSON.stringify({
+    personalizations: [{ to: [{ email: to }] }],
+    from: { email: fromEmail, name: 'SPT OFFICIAL' },
+    subject,
+    content: [{ type: 'text/html', value: html }],
+  });
+  await new Promise<void>((resolve, reject) => {
+    const req = https.request({
+      hostname: 'api.sendgrid.com',
+      port: 443,
+      path: '/v3/mail/send',
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(data),
+      },
+    }, (res) => {
+      let body = '';
+      res.on('data', (chunk) => body += chunk);
+      res.on('end', () => {
+        if (res.statusCode === 202) resolve();
+        else reject(new Error(`SendGrid error ${res.statusCode}: ${body}`));
+      });
+    });
+    req.on('error', reject);
+    req.write(data);
+    req.end();
+  });
+}
+
+function buildConfirmEmailHtml(actionLink: string, otp: string): string {
+  return `<div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:24px;background:#0f172a;color:#e2e8f0;border-radius:12px">
+    <h2 style="color:#06b6d4;margin:0 0 16px">SPT OFFICIAL</h2>
+    <p>Thank you for registering! Confirm your email using one of these methods:</p>
+    <div style="background:#1e293b;border-radius:8px;padding:16px;margin:16px 0">
+      <p style="margin:0 0 8px"><strong>Method 1:</strong> Click the button below:</p>
+      <a href="${actionLink}" style="display:inline-block;padding:12px 24px;background:#06b6d4;color:#0f172a;text-decoration:none;font-weight:bold;border-radius:8px;margin:8px 0">Confirm Email</a>
+    </div>
+    <div style="background:#1e293b;border-radius:8px;padding:16px;margin:16px 0">
+      <p style="margin:0 0 8px"><strong>Method 2:</strong> Enter this OTP code in the app:</p>
+      <p style="font-size:32px;letter-spacing:8px;text-align:center;color:#06b6d4;font-weight:bold;margin:8px 0">${otp}</p>
+    </div>
+    <p style="color:#94a3b8;font-size:12px">Code expires in 10 minutes.</p>
+  </div>`;
+}
+
+function buildResetEmailHtml(actionLink: string, otp: string): string {
+  return `<div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:24px;background:#0f172a;color:#e2e8f0;border-radius:12px">
+    <h2 style="color:#06b6d4;margin:0 0 16px">SPT OFFICIAL</h2>
+    <p>Reset your password using one of these methods:</p>
+    <div style="background:#1e293b;border-radius:8px;padding:16px;margin:16px 0">
+      <p style="margin:0 0 8px"><strong>Method 1:</strong> Click the button below:</p>
+      <a href="${actionLink}" style="display:inline-block;padding:12px 24px;background:#06b6d4;color:#0f172a;text-decoration:none;font-weight:bold;border-radius:8px;margin:8px 0">Reset Password</a>
+    </div>
+    <div style="background:#1e293b;border-radius:8px;padding:16px;margin:16px 0">
+      <p style="margin:0 0 8px"><strong>Method 2:</strong> Enter this OTP code in the app:</p>
+      <p style="font-size:32px;letter-spacing:8px;text-align:center;color:#06b6d4;font-weight:bold;margin:8px 0">${otp}</p>
+    </div>
+    <p style="color:#94a3b8;font-size:12px">Code expires in 10 minutes.</p>
+  </div>`;
+}
+
+async function trySendEmail(to: string, subject: string, html: string): Promise<void> {
+  // Try SMTP port 587
+  const transporter = getTransporter();
+  if (transporter) {
+    try {
+      await transporter.sendMail({
+        from: `"SPT OFFICIAL" <${process.env.GMAIL_EMAIL}>`,
+        to, subject, html,
+      });
+      return;
+    } catch (smtpErr) {
+      console.warn("SMTP 587 failed, trying 465:", (smtpErr as Error).message);
+    }
+  }
+  // Try SMTP port 465 SSL
+  const sslTransporter = getTransporterSsl();
+  if (sslTransporter) {
+    try {
+      await sslTransporter.sendMail({
+        from: `"SPT OFFICIAL" <${process.env.GMAIL_EMAIL}>`,
+        to, subject, html,
+      });
+      return;
+    } catch (sslErr) {
+      console.warn("SMTP 465 failed, trying Gmail API:", (sslErr as Error).message);
+    }
+  }
+  // Try Gmail REST API via HTTPS (port 443)
+  if (process.env.GMAIL_CLIENT_ID && process.env.GMAIL_CLIENT_SECRET && process.env.GMAIL_REFRESH_TOKEN) {
+    try {
+      await sendViaGmailApi(to, subject, html);
+      return;
+    } catch (gmailErr) {
+      console.warn("Gmail API failed, trying SendGrid:", (gmailErr as Error).message);
+    }
+  }
+  // Try SendGrid HTTPS API (port 443)
+  if (process.env.SENDGRID_API_KEY) {
+    await sendEmailViaHttps(to, subject, html);
+    return;
+  }
+  throw new Error(
+    'Cannot send email. Set GMAIL_CLIENT_ID + GMAIL_CLIENT_SECRET + GMAIL_REFRESH_TOKEN ' +
+    '(Gmail REST API via port 443) or SENDGRID_API_KEY (SendGrid via port 443).'
+  );
 }
 
 async function startServer() {
@@ -263,30 +468,14 @@ async function startServer() {
       const otp = generateOtp();
       otpStore.set(email.toLowerCase(), { otp, email: email.toLowerCase(), expiresAt: Date.now() + 600000 });
 
-      // Send via nodemailer
-      const transporter = getTransporter();
-      if (!transporter) throw new Error('Gmail SMTP not configured');
+      // Send email (tries SMTP 587 → 465 → SendGrid 443)
+      await trySendEmail(
+        email,
+        'SPT OFFICIAL - Confirm Your Email Address',
+        buildConfirmEmailHtml(actionLink, otp)
+      );
 
-      await transporter.sendMail({
-        from: `"SPT OFFICIAL" <${process.env.GMAIL_EMAIL}>`,
-        to: email,
-        subject: 'SPT OFFICIAL - Confirm Your Email Address',
-        html: `<div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:24px;background:#0f172a;color:#e2e8f0;border-radius:12px">
-          <h2 style="color:#06b6d4;margin:0 0 16px">SPT OFFICIAL</h2>
-          <p>Thank you for registering! Confirm your email using one of these methods:</p>
-          <div style="background:#1e293b;border-radius:8px;padding:16px;margin:16px 0">
-            <p style="margin:0 0 8px"><strong>Method 1:</strong> Click the button below:</p>
-            <a href="${actionLink}" style="display:inline-block;padding:12px 24px;background:#06b6d4;color:#0f172a;text-decoration:none;font-weight:bold;border-radius:8px;margin:8px 0">Confirm Email</a>
-          </div>
-          <div style="background:#1e293b;border-radius:8px;padding:16px;margin:16px 0">
-            <p style="margin:0 0 8px"><strong>Method 2:</strong> Enter this OTP code in the app:</p>
-            <p style="font-size:32px;letter-spacing:8px;text-align:center;color:#06b6d4;font-weight:bold;margin:8px 0">${otp}</p>
-          </div>
-          <p style="color:#94a3b8;font-size:12px">Code expires in 10 minutes. If you didn't create an account, ignore this email.</p>
-        </div>`,
-      });
-
-      res.json({ success: true, sent: true, otp });
+      res.json({ success: true, sent: true });
     } catch (err: any) {
       console.error("Send confirmation error:", err);
       res.status(500).json({ error: err.message || 'Failed to send confirmation email' });
@@ -430,7 +619,7 @@ async function startServer() {
     res.redirect(appUrl);
   });
 
-  // Forgot password — try nodemailer first, then Supabase built-in email
+  // Forgot password — send recovery email via nodemailer (link + OTP)
   app.post("/api/forgot-password", async (req, res) => {
     try {
       const { email } = req.body;
@@ -439,67 +628,130 @@ async function startServer() {
       const appUrl = getAppUrl(req);
       const supabaseUrl = getSupabaseUrl();
       const serviceRole = getSupabaseServiceRole();
+      if (!supabaseUrl || !serviceRole) return res.status(500).json({ error: 'Server config error' });
 
-      // Try nodemailer first (generateLink + Gmail SMTP)
-      if (supabaseUrl && serviceRole) {
-        try {
-          const supabaseAdmin = createClient(supabaseUrl, serviceRole, {
-            auth: { autoRefreshToken: false, persistSession: false }
-          });
+      const supabaseAdmin = createClient(supabaseUrl, serviceRole, {
+        auth: { autoRefreshToken: false, persistSession: false }
+      });
 
-          const { data: linkData, error: linkError } = await supabaseAdmin.auth.admin.generateLink({
-            type: 'recovery',
-            email,
-            options: { redirectTo: `${appUrl}/reset-password` },
-          });
+      const { data: linkData, error: linkError } = await supabaseAdmin.auth.admin.generateLink({
+        type: 'recovery',
+        email,
+        options: { redirectTo: `${appUrl}/reset-password` },
+      });
+      if (linkError) throw new Error('User not found or recovery link generation failed');
 
-          if (!linkError && linkData?.properties?.action_link) {
-            const actionLink = linkData.properties.action_link;
-            const otp = generateOtp();
-            otpStore.set(`recovery_${email.toLowerCase()}`, { otp, email: email.toLowerCase(), expiresAt: Date.now() + 600000 });
+      const actionLink = linkData?.properties?.action_link;
+      if (!actionLink) throw new Error('Failed to generate recovery link');
 
-            const transporter = getTransporter();
-            if (transporter) {
-              try {
-                await transporter.sendMail({
-                  from: `"SPT OFFICIAL" <${process.env.GMAIL_EMAIL}>`,
-                  to: email,
-                  subject: 'SPT OFFICIAL - Password Reset',
-                  html: `<div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:24px;background:#0f172a;color:#e2e8f0;border-radius:12px">
-                    <h2 style="color:#06b6d4;margin:0 0 16px">SPT OFFICIAL</h2>
-                    <p>Reset your password using one of these methods:</p>
-                    <div style="background:#1e293b;border-radius:8px;padding:16px;margin:16px 0">
-                      <p style="margin:0 0 8px"><strong>Method 1:</strong> Click the button below:</p>
-                      <a href="${actionLink}" style="display:inline-block;padding:12px 24px;background:#06b6d4;color:#0f172a;text-decoration:none;font-weight:bold;border-radius:8px;margin:8px 0">Reset Password</a>
-                    </div>
-                    <div style="background:#1e293b;border-radius:8px;padding:16px;margin:16px 0">
-                      <p style="margin:0 0 8px"><strong>Method 2:</strong> Enter this OTP code in the app:</p>
-                      <p style="font-size:32px;letter-spacing:8px;text-align:center;color:#06b6d4;font-weight:bold;margin:8px 0">${otp}</p>
-                    </div>
-                    <p style="color:#94a3b8;font-size:12px">Code expires in 10 minutes.</p>
-                  </div>`,
-                });
-                return res.json({ success: true, linkSent: true, sent: true });
-              } catch {} // nodemailer failed, try Supabase fallback
-            }
-          }
-        } catch {} // generateLink failed, try Supabase fallback
-      }
+      const otp = generateOtp();
+      otpStore.set(`recovery_${email.toLowerCase()}`, { otp, email: email.toLowerCase(), expiresAt: Date.now() + 600000 });
 
-      // Fallback: Supabase built-in email
-      if (supabaseUrl && getSupabaseAnonKey()) {
-        const supabaseClient = createClient(supabaseUrl, getSupabaseAnonKey());
-        const { error } = await supabaseClient.auth.resetPasswordForEmail(email, {
-          redirectTo: `${appUrl}/reset-password`,
-        });
-        if (error) throw error;
-        return res.json({ success: true, linkSent: true, sent: false });
-      }
+      // Send email (tries SMTP 587 → 465 → SendGrid 443)
+      await trySendEmail(
+        email,
+        'SPT OFFICIAL - Password Reset',
+        buildResetEmailHtml(actionLink, otp)
+      );
 
-      throw new Error('No email method available');
+      res.json({ success: true, linkSent: true });
     } catch (err: any) {
       console.error("Forgot password error:", err);
       res.status(500).json({ error: err.message || 'Failed to send reset link' });
+    }
+  });
+
+  // Test email config (admin-protected)
+  app.post("/api/test-email", requireAdmin, async (req, res) => {
+    try {
+      const { email } = req.body;
+      if (!email) return res.status(400).json({ error: 'Test email address required' });
+
+      const startTime = Date.now();
+      const results: string[] = [];
+
+      // Test SMTP 587
+      const transporter = getTransporter();
+      if (transporter) {
+        try {
+          await transporter.verify();
+          await transporter.sendMail({
+            from: `"SPT OFFICIAL" <${process.env.GMAIL_EMAIL}>`,
+            to: email,
+            subject: 'SPT OFFICIAL - SMTP Test (port 587)',
+            html: '<p>SMTP on port 587 works!</p>',
+          });
+          results.push('✅ SMTP port 587: SUCCESS');
+        } catch (e: any) {
+          results.push(`❌ SMTP port 587: FAILED - ${e.message}`);
+        }
+      } else {
+        results.push('⚠️ SMTP port 587: SKIPPED (GMAIL_EMAIL/GMAIL_APP_PASSWORD not set)');
+      }
+
+      // Test SMTP 465
+      const sslTransporter = getTransporterSsl();
+      if (sslTransporter) {
+        try {
+          await sslTransporter.verify();
+          await sslTransporter.sendMail({
+            from: `"SPT OFFICIAL" <${process.env.GMAIL_EMAIL}>`,
+            to: email,
+            subject: 'SPT OFFICIAL - SMTP Test (port 465)',
+            html: '<p>SMTP on port 465 works!</p>',
+          });
+          results.push('✅ SMTP port 465: SUCCESS');
+        } catch (e: any) {
+          results.push(`❌ SMTP port 465: FAILED - ${e.message}`);
+        }
+      } else {
+        results.push('⚠️ SMTP port 465: SKIPPED (GMAIL_EMAIL/GMAIL_APP_PASSWORD not set)');
+      }
+
+      // Test Gmail REST API
+      if (process.env.GMAIL_CLIENT_ID && process.env.GMAIL_CLIENT_SECRET && process.env.GMAIL_REFRESH_TOKEN) {
+        try {
+          await sendViaGmailApi(
+            email,
+            'SPT OFFICIAL - Gmail API Test (port 443)',
+            '<p>Gmail REST API on port 443 works!</p>'
+          );
+          results.push('✅ Gmail API port 443: SUCCESS');
+        } catch (e: any) {
+          results.push(`❌ Gmail API port 443: FAILED - ${e.message}`);
+        }
+      } else {
+        results.push('⚠️ Gmail API port 443: SKIPPED (GMAIL_CLIENT_ID/GMAIL_CLIENT_SECRET/GMAIL_REFRESH_TOKEN not set)');
+      }
+
+      // Test SendGrid
+      if (process.env.SENDGRID_API_KEY) {
+        try {
+          await sendEmailViaHttps(
+            email,
+            'SPT OFFICIAL - SendGrid Test (port 443)',
+            '<p>SendGrid HTTPS API on port 443 works!</p>'
+          );
+          results.push('✅ SendGrid port 443: SUCCESS');
+        } catch (e: any) {
+          results.push(`❌ SendGrid port 443: FAILED - ${e.message}`);
+        }
+      } else {
+        results.push('⚠️ SendGrid port 443: SKIPPED (SENDGRID_API_KEY not set)');
+      }
+
+      const elapsed = Date.now() - startTime;
+      const anySuccess = results.some(r => r.startsWith('✅'));
+      res.json({
+        success: anySuccess,
+        elapsed: `${elapsed}ms`,
+        results,
+        summary: anySuccess
+          ? 'At least one email method works!'
+          : 'All email methods failed. Check the errors above.',
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || 'Test failed' });
     }
   });
 

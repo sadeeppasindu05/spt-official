@@ -175,38 +175,18 @@ export default function SptUniverseGate({ onClose, onSuccess, language = 'en', r
         body: JSON.stringify({ email }),
       });
 
-      if (confirmRes.ok) {
-        // Email (with link + OTP) sent successfully → show OTP input
-        setOtpMode('signup');
-        setOtpValue('');
-        setShowOtpInput(true);
-        setSuccessMessage(gt(
-          '✅ ලියාපදිංචිය සාර්ථකයි! ඔබගේ ඊමේල් ලිපිනයට OTP කේතයක් සහ තහවුරු කිරීමේ සබැඳියක් එවා ඇත. කරුණාකර ඔබගේ Inbox (සහ SPAM) පරීක්ෂා කරන්න.',
-          '✅ Registration successful! An OTP code and confirmation link have been sent to your email. Please check your inbox (and SPAM folder).'
-        ));
-      } else {
-        // Email sending failed → auto-confirm + auto-login
-        await fetch('/api/send-otp', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email, userId: data.user?.id || '' }),
-        });
-        setSuccessMessage(gt(
-          '✅ සුභ පැතුම්! ඔබගේ ගිණුම සක්‍රිය කරන ලදී! ස්වයංක්‍රීයව පිවිසෙමින්...',
-          '✅ Congratulations! Your account has been activated! Auto-logging in...'
-        ));
-        setTimeout(async () => {
-          try {
-            const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
-            if (!signInError && onSuccess) {
-              onSuccess({ email, name: fullName, password });
-            } else {
-              setView('login');
-              setPassword('');
-            }
-          } catch { setView('login'); setPassword(''); }
-        }, 1500);
+      if (!confirmRes.ok) {
+        const errData = await confirmRes.json().catch(() => ({}));
+        throw new Error(errData.error || 'Confirmation email failed to send');
       }
+
+      setOtpMode('signup');
+      setOtpValue('');
+      setShowOtpInput(true);
+      setSuccessMessage(gt(
+        '✅ ලියාපදිංචිය සාර්ථකයි! ඔබගේ ඊමේල් ලිපිනයට OTP කේතයක් සහ තහවුරු කිරීමේ සබැඳියක් එවා ඇත. කරුණාකර ඔබගේ Inbox (සහ SPAM) පරීක්ෂා කරන්න.',
+        '✅ Registration successful! An OTP code and confirmation link have been sent to your email. Please check your inbox (and SPAM folder).'
+      ));
     } catch (err: any) {
       setErrorMessage(err.message || gt('ලියාපදිංචි වීමේදී දෝෂයක් මතු විය.', 'Error signing up. Please try again.'));
     } finally {
@@ -235,22 +215,13 @@ export default function SptUniverseGate({ onClose, onSuccess, language = 'en', r
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to send reset link');
 
+      setOtpMode('forgot');
       setOtpValue('');
-      if (data.sent) {
-        setOtpMode('forgot');
-        setShowOtpInput(true);
-        setSuccessMessage(gt(
-          '🔐 SPT OFFICIAL: ඔබගේ ඊමේල් ලිපිනයට මුරපදය යළි සැකසීමේ සබැඳියක් සහ OTP කේතයක් එවා ඇත. කරුණාකර ඔබගේ Inbox (සහ SPAM) පරීක්ෂා කරන්න.',
-          '🔐 SPT OFFICIAL: A password reset link and OTP code have been sent to your email. Please check your inbox (and SPAM folder).'
-        ));
-      } else {
-        // Fallback: Supabase email sent
-        setSuccessMessage(gt(
-          '🔐 SPT OFFICIAL: ඔබගේ ඊමේල් ලිපිනයට මුරපදය යළි සැකසීමේ සබැඳියක් එවා ඇත. කරුණාකර ඔබගේ Inbox (සහ SPAM) පරීක්ෂා කරන්න.',
-          '🔐 SPT OFFICIAL: A password reset link has been sent to your email. Please check your inbox (and SPAM folder).'
-        ));
-        setTimeout(() => handleViewChange('login'), 4000);
-      }
+      setShowOtpInput(true);
+      setSuccessMessage(gt(
+        '🔐 SPT OFFICIAL: ඔබගේ ඊමේල් ලිපිනයට මුරපදය යළි සැකසීමේ සබැඳියක් සහ OTP කේතයක් එවා ඇත. කරුණාකර ඔබගේ Inbox (සහ SPAM) පරීක්ෂා කරන්න.',
+        '🔐 SPT OFFICIAL: A password reset link and OTP code have been sent to your email. Please check your inbox (and SPAM folder).'
+      ));
     } catch (err: any) {
       setErrorMessage(err.message || gt('ඊමේල් එක යැවීමේදී දෝෂයක් මතු විය.', 'Error sending recovery transmission.'));
     } finally {
