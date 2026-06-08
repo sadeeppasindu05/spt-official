@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { MessageSquare, X, Send, Sparkles, User, Loader2, Mail, FileText, CheckCircle2, ChevronRight, MessageCircle } from 'lucide-react';
+import { supabase } from '../supabaseClient';
 
 interface CustomerSupportChatProps {
   language?: 'si' | 'en';
@@ -136,10 +137,25 @@ export default function CustomerSupportChat({ language = 'en' }: CustomerSupport
       };
 
       const existingTickets = JSON.parse(localStorage.getItem('spt_support_messages') || '[]');
-      existingTickets.unshift(newTicket); // Newest messages at top
+      existingTickets.unshift(newTicket);
       localStorage.setItem('spt_support_messages', JSON.stringify(existingTickets));
 
-      // Dispatch event so AdminConsole listens to it and updates dynamically in real-time
+      // Also sync to Supabase if available
+      try {
+        const isSupabaseReady = import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_ANON_KEY;
+        if (isSupabaseReady) {
+          await supabase.from('support_messages').insert([{
+            id: newTicket.id,
+            email: newTicket.email,
+            message: newTicket.message,
+            created_at: newTicket.createdAt,
+            status: 'pending'
+          }]);
+        }
+      } catch (err) {
+        console.error('Failed to sync support ticket to Supabase:', err);
+      }
+
       window.dispatchEvent(new Event('spt_support_messages_changed'));
 
       setFormMessage('');

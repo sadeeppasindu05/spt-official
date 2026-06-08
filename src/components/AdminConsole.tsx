@@ -10,6 +10,8 @@ import { SPACE_WALLPAPERS } from '../data';
 import { SystemConfig, SptTool, ServiceItem, AccessoryBrand, OfferItem, HomeStatCard, AboutCard, ReviewItem, TelemetryEvent, ContactLinkItem, BlogPost, SptUser } from '../types';
 import { ImageCropperModal } from './ImageCropper';
 import { createBackup, downloadBackup, parseBackupFile, saveAutoBackupData, getAutoBackupData, getAutoBackupSettings, saveAutoBackupSettings, getIntervalMs, AutoBackupInterval, AutoBackupSettings } from '../utils/backup';
+import { uploadToSupabaseStorage } from '../utils/storage';
+import { supabase } from '../supabaseClient';
 
 // Safe confirm dialog implementation for sandboxed environments
 const confirm = (msg: string): boolean => {
@@ -147,11 +149,13 @@ const FileUploadTrigger = ({ onUploaded, label = "Device එකෙන් රූ�
     setOffsetY(touch.clientY - dragStart.y);
   };
 
-  const handleSaveCrop = () => {
+  const handleSaveCrop = async () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const base64Crop = canvas.toDataURL('image/jpeg', 0.9);
-    onUploaded(base64Crop);
+    // Try to upload to Supabase Storage for a clean URL instead of bloated base64
+    const publicUrl = await uploadToSupabaseStorage(base64Crop);
+    onUploaded(publicUrl || base64Crop);
     setShowCropModal(false);
     setOriginalImage(null);
   };
@@ -423,13 +427,33 @@ export default function AdminConsole({
   const [ticketStatusFilter, setTicketStatusFilter] = useState<'all' | 'pending' | 'resolved'>('all');
 
   React.useEffect(() => {
-    const loadTickets = () => {
+    const syncFromSupabase = async () => {
+      const isSupabaseReady = import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_ANON_KEY;
+      if (isSupabaseReady) {
+        try {
+          const { data } = await supabase.from('support_messages').select('*').order('created_at', { ascending: false });
+          if (data && data.length > 0) {
+            const mapped = data.map(item => ({
+              id: item.id,
+              email: item.email,
+              message: item.message,
+              createdAt: item.created_at,
+              status: item.status || 'pending'
+            }));
+            setSupportTickets(mapped);
+            localStorage.setItem('spt_support_messages', JSON.stringify(mapped));
+            return;
+          }
+        } catch (err) {
+          console.error('Failed to load support tickets from Supabase:', err);
+        }
+      }
+      // Fallback to localStorage
       try {
         const stored = localStorage.getItem('spt_support_messages');
         if (stored) {
           setSupportTickets(JSON.parse(stored));
         } else {
-          // Default beautiful presets representing interactive inbox items
           const samples = [
             {
               id: 'ticket_sample_1',
@@ -454,10 +478,31 @@ export default function AdminConsole({
       }
     };
 
-    loadTickets();
-    window.addEventListener('spt_support_messages_changed', loadTickets);
-    return () => window.removeEventListener('spt_support_messages_changed', loadTickets);
+    syncFromSupabase();
+    window.addEventListener('spt_support_messages_changed', syncFromSupabase);
+    return () => window.removeEventListener('spt_support_messages_changed', syncFromSupabase);
   }, []);
+
+  const syncSupportToSupabase = async (tickets: any[]) => {
+    const isSupabaseReady = import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_ANON_KEY;
+    if (!isSupabaseReady) return;
+    try {
+      // Delete all existing and re-insert
+      await supabase.from('support_messages').delete().neq('id', 'none');
+      if (tickets.length > 0) {
+        const inserts = tickets.map(t => ({
+          id: t.id,
+          email: t.email,
+          message: t.message,
+          created_at: t.createdAt,
+          status: t.status || 'pending'
+        }));
+        await supabase.from('support_messages').insert(inserts);
+      }
+    } catch (err) {
+      console.error('Failed to sync support tickets to Supabase:', err);
+    }
+  };
 
   const handleToggleTicketStatus = (ticketId: string) => {
     const updated = supportTickets.map(t => {
@@ -468,12 +513,14 @@ export default function AdminConsole({
     });
     setSupportTickets(updated);
     localStorage.setItem('spt_support_messages', JSON.stringify(updated));
+    syncSupportToSupabase(updated);
   };
 
   const handleDeleteTicket = (ticketId: string) => {
     const updated = supportTickets.filter(t => t.id !== ticketId);
     setSupportTickets(updated);
     localStorage.setItem('spt_support_messages', JSON.stringify(updated));
+    syncSupportToSupabase(updated);
   };
 
   React.useEffect(() => {
@@ -617,11 +664,15 @@ export default function AdminConsole({
   // Subscription Plan Edit States
   const [editingPlanId, setEditingPlanId] = useState<string | null>(null);
   const [editPlanTitle, setEditPlanTitle] = useState('');
+  const [editPlanTitleEn, setEditPlanTitleEn] = useState('');
   const [editPlanPrice, setEditPlanPrice] = useState(0);
   const [editPlanOriginalPrice, setEditPlanOriginalPrice] = useState(0);
   const [editPlanDiscountTag, setEditPlanDiscountTag] = useState('');
+  const [editPlanDiscountTagEn, setEditPlanDiscountTagEn] = useState('');
   const [editPlanDuration, setEditPlanDuration] = useState('');
+  const [editPlanDurationEn, setEditPlanDurationEn] = useState('');
   const [editPlanIsFree, setEditPlanIsFree] = useState(false);
+  const [editPlanImageUrl, setEditPlanImageUrl] = useState('');
   const [newPlanTitle, setNewPlanTitle] = useState('');
   const [newPlanTitleEn, setNewPlanTitleEn] = useState('');
   const [newPlanPrice, setNewPlanPrice] = useState(0);
@@ -649,11 +700,22 @@ export default function AdminConsole({
   const [newPayDetailsEn, setNewPayDetailsEn] = useState('');
   const [newPayType, setNewPayType] = useState('bank');
 
-  // Security Admins local state
-  const [adminUsers, setAdminUsers] = useState<any[]>([
-    { id: 'admin_1', name: 'Sadeep Pasindu', email: 'sadeeppasindu0218@gmail.com', role: 'superadmin', isActive: true },
-    { id: 'admin_2', name: 'Staff Assistant', email: 'support@spt.com', role: 'moderator', isActive: true }
-  ]);
+  // Security Admins local state (persisted to localStorage)
+  const [adminUsers, setAdminUsers] = useState<any[]>(() => {
+    try {
+      const saved = localStorage.getItem('spt_admin_users');
+      if (saved) return JSON.parse(saved);
+    } catch (e) {}
+    return [
+      { id: 'admin_1', name: 'Sadeep Pasindu', email: 'sadeeppasindu0218@gmail.com', role: 'superadmin', isActive: true },
+      { id: 'admin_2', name: 'Staff Assistant', email: 'support@spt.com', role: 'moderator', isActive: true }
+    ];
+  });
+
+  // Persist admin users to localStorage on change
+  React.useEffect(() => {
+    localStorage.setItem('spt_admin_users', JSON.stringify(adminUsers));
+  }, [adminUsers]);
   const [newAdminName, setNewAdminName] = useState('');
   const [newAdminEmail, setNewAdminEmail] = useState('');
   const [newAdminRole, setNewAdminRole] = useState('editor');
@@ -2124,68 +2186,50 @@ export default function AdminConsole({
               const now = new Date();
               if (analyticsTimeframe === 'day') {
                 const labels = ['0-4h', '4-8h', '8-12h', '12-16h', '16-20h', '20-24h'];
-                const visits = [28, 41, 62, 55, 87, 49];
-                const signups = [3, 5, 10, 6, 14, 8];
-                const actualVisits = Array(6).fill(0);
-                const actualSignups = Array(6).fill(0);
+                const visits = Array(6).fill(0);
+                const signups = Array(6).fill(0);
                 telemetryList.forEach(item => {
                   const itemDate = new Date(item.timestamp);
                   const diffHours = (now.getTime() - itemDate.getTime()) / (1000 * 3600);
                   if (diffHours >= 0 && diffHours < 24) {
                     const idx = Math.floor(itemDate.getHours() / 4) % 6;
-                    if (item.type === 'pageview') actualVisits[idx]++;
-                    else if (item.type === 'signup') actualSignups[idx]++;
+                    if (item.type === 'pageview') visits[idx]++;
+                    else if (item.type === 'signup') signups[idx]++;
                   }
                 });
-                return {
-                  labels,
-                  visits: visits.map((v, i) => v + actualVisits[i]),
-                  signups: signups.map((s, i) => s + actualSignups[i])
-                };
+                return { labels, visits, signups };
               } else if (analyticsTimeframe === 'week') {
                 const labels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-                const visits = [95, 112, 148, 105, 126, 185, 154];
-                const signups = [14, 18, 25, 16, 20, 34, 28];
-                const actualVisits = Array(7).fill(0);
-                const actualSignups = Array(7).fill(0);
+                const visits = Array(7).fill(0);
+                const signups = Array(7).fill(0);
                 telemetryList.forEach(item => {
                   const itemDate = new Date(item.timestamp);
                   const diffDays = Math.floor((now.getTime() - itemDate.getTime()) / (1000 * 3600 * 24));
                   if (diffDays >= 0 && diffDays < 7) {
                     const idx = 6 - diffDays;
                     if (idx >= 0 && idx < 7) {
-                      if (item.type === 'pageview') actualVisits[idx]++;
-                      else if (item.type === 'signup') actualSignups[idx]++;
+                      if (item.type === 'pageview') visits[idx]++;
+                      else if (item.type === 'signup') signups[idx]++;
                     }
                   }
                 });
-                return {
-                  labels,
-                  visits: visits.map((v, i) => v + actualVisits[i]),
-                  signups: signups.map((s, i) => s + actualSignups[i])
-                };
+                return { labels, visits, signups };
               } else if (analyticsTimeframe === 'month') {
                 const labels = ['Week 1', 'Week 2', 'Week 3', 'Week 4'];
-                const visits = [520, 640, 580, 786];
-                const signups = [85, 110, 94, 138];
-                const actualVisits = Array(4).fill(0);
-                const actualSignups = Array(4).fill(0);
+                const visits = Array(4).fill(0);
+                const signups = Array(4).fill(0);
                 telemetryList.forEach(item => {
                   const itemDate = new Date(item.timestamp);
                   const diffDays = Math.floor((now.getTime() - itemDate.getTime()) / (1000 * 3600 * 24));
                   if (diffDays >= 0 && diffDays < 28) {
                     const idx = 3 - Math.floor(diffDays / 7);
                     if (idx >= 0 && idx < 4) {
-                      if (item.type === 'pageview') actualVisits[idx]++;
-                      else if (item.type === 'signup') actualSignups[idx]++;
+                      if (item.type === 'pageview') visits[idx]++;
+                      else if (item.type === 'signup') signups[idx]++;
                     }
                   }
                 });
-                return {
-                  labels,
-                  visits: visits.map((v, i) => v + actualVisits[i]),
-                  signups: signups.map((s, i) => s + actualSignups[i])
-                };
+                return { labels, visits, signups };
               } else if (analyticsTimeframe === '6months') {
                 const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
                 const labels: string[] = [];
@@ -2194,63 +2238,49 @@ export default function AdminConsole({
                   d.setMonth(now.getMonth() - i);
                   labels.push(months[d.getMonth()]);
                 }
-                const visits = [1200, 1420, 1680, 1550, 1890, 2100];
-                const signups = [185, 220, 280, 245, 310, 340];
-                const actualVisits = Array(6).fill(0);
-                const actualSignups = Array(6).fill(0);
+                const visits = Array(6).fill(0);
+                const signups = Array(6).fill(0);
                 telemetryList.forEach(item => {
                   const itemDate = new Date(item.timestamp);
                   const diffMonths = (now.getFullYear() - itemDate.getFullYear()) * 12 + (now.getMonth() - itemDate.getMonth());
                   if (diffMonths >= 0 && diffMonths < 6) {
                     const idx = 5 - diffMonths;
                     if (idx >= 0 && idx < 6) {
-                      if (item.type === 'pageview') actualVisits[idx]++;
-                      else if (item.type === 'signup') actualSignups[idx]++;
+                      if (item.type === 'pageview') visits[idx]++;
+                      else if (item.type === 'signup') signups[idx]++;
                     }
                   }
                 });
-                return {
-                  labels,
-                  visits: visits.map((v, i) => v + actualVisits[i]),
-                  signups: signups.map((s, i) => s + actualSignups[i])
-                };
+                return { labels, visits, signups };
               } else if (analyticsTimeframe === 'year') {
                 const labels = ['Quarter 1', 'Quarter 2', 'Quarter 3', 'Quarter 4'];
-                const visits = [2400, 3200, 4100, 5420];
-                const signups = [390, 510, 640, 895];
-                const actualVisits = Array(4).fill(0);
-                const actualSignups = Array(4).fill(0);
+                const visits = Array(4).fill(0);
+                const signups = Array(4).fill(0);
                 telemetryList.forEach(item => {
                   const itemDate = new Date(item.timestamp);
                   const diffDays = Math.floor((now.getTime() - itemDate.getTime()) / (1000 * 3600 * 24));
                   if (diffDays >= 0 && diffDays < 365) {
                     const idx = 3 - Math.floor(diffDays / 91.25);
                     if (idx >= 0 && idx < 4) {
-                      if (item.type === 'pageview') actualVisits[idx]++;
-                      else if (item.type === 'signup') actualSignups[idx]++;
+                      if (item.type === 'pageview') visits[idx]++;
+                      else if (item.type === 'signup') signups[idx]++;
                     }
                   }
                 });
-                return {
-                  labels,
-                  visits: visits.map((v, i) => v + actualVisits[i]),
-                  signups: signups.map((s, i) => s + actualSignups[i])
-                };
+                return { labels, visits, signups };
               } else {
                 const labels = ['2023', '2024', '2025', '2026'];
-                const visits = [4800, 7800, 12400, 16900];
-                const signups = [720, 1150, 1980, 2540];
-                const actualVisits = Array(4).fill(0);
-                const actualSignups = Array(4).fill(0);
+                const visits = Array(4).fill(0);
+                const signups = Array(4).fill(0);
                 telemetryList.forEach(item => {
-                  if (item.type === 'pageview') actualVisits[3]++;
-                  else if (item.type === 'signup') actualSignups[3]++;
+                  const itemDate = new Date(item.timestamp);
+                  const yearIdx = itemDate.getFullYear() - 2023;
+                  if (yearIdx >= 0 && yearIdx < 4) {
+                    if (item.type === 'pageview') visits[yearIdx]++;
+                    else if (item.type === 'signup') signups[yearIdx]++;
+                  }
                 });
-                return {
-                  labels,
-                  visits: visits.map((v, i) => v + actualVisits[i]),
-                  signups: signups.map((s, i) => s + actualSignups[i])
-                };
+                return { labels, visits, signups };
               }
             })();
 
@@ -5396,11 +5426,57 @@ export default function AdminConsole({
                      </div>
                      <p className="text-xs text-slate-400 leading-relaxed min-h-[40px]">{plan.durationLabel}</p>
                      
-                     <div className="mt-4 flex gap-2 w-full pt-4 border-t border-white/5 disabled opacity-20 pointer-events-none hidden">
-                         {/* Edit disabled for now, mock UI */}
-                     </div>
-                     <button onClick={() => setSubscriptionPlans(prev => prev.filter(p => p.id !== plan.id))} className="cursor-pointer w-full mt-4 bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 border border-rose-500/20 py-2 rounded font-mono text-[10px] font-bold uppercase transition flex items-center justify-center gap-2">
-                        <Trash2 className="w-3.5 h-3.5" /> Remove Plan
+                     {editingPlanId === plan.id ? (
+                       <div className="mt-4 pt-4 border-t border-white/10 space-y-2">
+                         <input value={editPlanTitle} onChange={e => setEditPlanTitle(e.target.value)} placeholder="Title" className="w-full text-xs bg-slate-800 border border-white/10 rounded px-2 py-1 text-white" />
+                         <input value={editPlanTitleEn} onChange={e => setEditPlanTitleEn(e.target.value)} placeholder="Title (English)" className="w-full text-xs bg-slate-800 border border-cyan-400/30 rounded px-2 py-1 text-white" />
+                         <div className="grid grid-cols-2 gap-2">
+                           <input type="number" value={editPlanPrice || ''} onChange={e => setEditPlanPrice(Number(e.target.value))} placeholder="Price $" className="w-full text-xs bg-slate-800 border border-white/10 rounded px-2 py-1 text-white" />
+                           <input type="number" value={editPlanOriginalPrice || ''} onChange={e => setEditPlanOriginalPrice(Number(e.target.value))} placeholder="Original $" className="w-full text-xs bg-slate-800 border border-white/10 rounded px-2 py-1 text-white" />
+                         </div>
+                         <input value={editPlanDiscountTag} onChange={e => setEditPlanDiscountTag(e.target.value)} placeholder="Discount tag" className="w-full text-xs bg-slate-800 border border-white/10 rounded px-2 py-1 text-white" />
+                         <input value={editPlanDuration} onChange={e => setEditPlanDuration(e.target.value)} placeholder="Duration" className="w-full text-xs bg-slate-800 border border-white/10 rounded px-2 py-1 text-white" />
+                         <input value={editPlanDurationEn} onChange={e => setEditPlanDurationEn(e.target.value)} placeholder="Duration (English)" className="w-full text-xs bg-slate-800 border border-cyan-400/30 rounded px-2 py-1 text-white" />
+                         <div className="flex gap-2 mt-2">
+                           <button onClick={() => {
+                             setSubscriptionPlans((prev: any[]) => prev.map(p => p.id === plan.id ? {
+                               ...p,
+                               title: editPlanTitle,
+                               titleEn: editPlanTitleEn,
+                               priceUsd: editPlanPrice,
+                               originalPriceUsd: editPlanOriginalPrice,
+                               discountTag: editPlanDiscountTag,
+                               discountTagEn: editPlanDiscountTagEn,
+                               durationLabel: editPlanDuration,
+                               durationLabelEn: editPlanDurationEn,
+                               isFree: editPlanIsFree
+                             } : p));
+                             setEditingPlanId(null);
+                           }} className="flex-1 cursor-pointer bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 border border-emerald-500/20 py-1.5 rounded text-[10px] font-bold uppercase transition">Save</button>
+                           <button onClick={() => setEditingPlanId(null)} className="flex-1 cursor-pointer bg-slate-500/20 text-slate-400 hover:bg-slate-500/30 border border-slate-500/20 py-1.5 rounded text-[10px] font-bold uppercase transition">Cancel</button>
+                         </div>
+                       </div>
+                     ) : (
+                       <div className="mt-4 flex gap-2 w-full pt-4 border-t border-white/5">
+                         <button onClick={() => {
+                           setEditingPlanId(plan.id);
+                           setEditPlanTitle(plan.title || '');
+                           setEditPlanTitleEn(plan.titleEn || '');
+                           setEditPlanPrice(plan.priceUsd || 0);
+                           setEditPlanOriginalPrice(plan.originalPriceUsd || 0);
+                           setEditPlanDiscountTag(plan.discountTag || '');
+                           setEditPlanDiscountTagEn(plan.discountTagEn || '');
+                           setEditPlanDuration(plan.durationLabel || '');
+                           setEditPlanDurationEn(plan.durationLabelEn || '');
+                           setEditPlanIsFree(plan.isFree || false);
+                           setEditPlanImageUrl(plan.imageUrl || '');
+                         }} className="flex-1 cursor-pointer bg-cyan-500/10 text-cyan-400 hover:bg-cyan-500/20 border border-cyan-500/20 py-2 rounded text-[10px] font-bold uppercase transition flex items-center justify-center gap-1">
+                           <PenTool className="w-3 h-3" /> Edit
+                         </button>
+                       </div>
+                     )}
+                     <button onClick={() => setSubscriptionPlans(prev => prev.filter((p: any) => p.id !== plan.id))} className="cursor-pointer w-full mt-2 bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 border border-rose-500/20 py-2 rounded font-mono text-[10px] font-bold uppercase transition flex items-center justify-center gap-2">
+                         <Trash2 className="w-3.5 h-3.5" /> Remove Plan
                      </button>
                   </div>
                 ))}
@@ -5483,7 +5559,12 @@ export default function AdminConsole({
                 </p>
                 <div className="flex gap-2">
                    <input type="email" value={adminRecoveryEmail} onChange={e => setAdminRecoveryEmail(e.target.value)} className="flex-grow text-xs bg-black/60 border border-rose-500/30 rounded px-3 py-2 text-rose-100 focus:outline-none" />
-                   <button onClick={() => alert('Recovery Email Successfully Updated!')} className="cursor-pointer px-3 bg-rose-500 hover:bg-rose-400 text-black font-bold uppercase font-mono text-[9px] rounded transition">Update</button>
+                   <button onClick={() => {
+                     if (adminRecoveryEmail && setConfig) {
+                       setConfig((prev: SystemConfig) => ({ ...prev, adminRecoveryEmail: adminRecoveryEmail }));
+                       alert('Recovery Email Successfully Updated!');
+                     }
+                   }} className="cursor-pointer px-3 bg-rose-500 hover:bg-rose-400 text-black font-bold uppercase font-mono text-[9px] rounded transition">Update</button>
                 </div>
              </div>
 

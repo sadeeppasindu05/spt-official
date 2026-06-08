@@ -174,7 +174,7 @@ export default function SptUniverseGate({ onClose, onSuccess, language = 'en', r
       const confirmRes = await fetch('/api/send-confirmation', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email }),
+        body: JSON.stringify({ email, password }),
       });
 
       if (!confirmRes.ok) {

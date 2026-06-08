@@ -7,6 +7,8 @@ import dotenv from "dotenv";
 import crypto from "crypto";
 import nodemailer from "nodemailer";
 import https from "https";
+import http from "http";
+import fs from "fs";
 import ws from "ws";
 
 dotenv.config();
@@ -488,7 +490,7 @@ async function startServer() {
   // Send confirmation email via nodemailer (Gmail SMTP) with link + OTP
   app.post("/api/send-confirmation", rateLimitMiddleware(5, 60000), async (req, res) => {
     try {
-      const { email } = req.body;
+      const { email, password } = req.body;
       if (!email) return res.status(400).json({ error: 'Email required' });
 
       const supabaseUrl = getSupabaseUrl();
@@ -504,6 +506,7 @@ async function startServer() {
       const { data: linkData, error: linkError } = await supabaseAdmin.auth.admin.generateLink({
         type: 'signup',
         email,
+        password: password || crypto.randomBytes(16).toString('hex'),
         options: { redirectTo: `${getAppUrl(req)}/auth/callback` },
       });
       if (linkError) throw linkError;
@@ -811,6 +814,114 @@ async function startServer() {
     }
   });
 
+  // File upload endpoint (fallback when Supabase Storage unavailable)
+  app.post("/api/upload", requireAdmin, async (req, res) => {
+    try {
+      const { file, fileName } = req.body;
+      if (!file) return res.status(400).json({ error: 'No file data provided' });
+
+      const uploadsDir = path.join(process.cwd(), 'dist', 'uploads');
+      if (!fs.existsSync(uploadsDir)) {
+        fs.mkdirSync(uploadsDir, { recursive: true });
+      }
+
+      const ext = file.includes('image/png') ? 'png' : 'jpg';
+      const cleanBase64 = file.replace(/^data:image\/\w+;base64,/, '');
+      const buffer = Buffer.from(cleanBase64, 'base64');
+      const savedName = fileName || `${Date.now()}_${crypto.randomBytes(4).toString('hex')}.${ext}`;
+      const filePath = path.join(uploadsDir, savedName);
+      fs.writeFileSync(filePath, buffer);
+
+      res.json({ success: true, url: `/uploads/${savedName}` });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || 'Upload failed' });
+    }
+  });
+
+  // Payment receipt submission
+  app.post("/api/payment/receipt", async (req, res) => {
+    try {
+      const { email, planId, receiptData, refCode } = req.body;
+      if (!email || !receiptData) return res.status(400).json({ error: 'Email and receipt required' });
+
+      const isSupabaseReady = getSupabaseUrl() && getSupabaseAnonKey();
+      if (isSupabaseReady) {
+        try {
+          const supabaseAdmin = createClient(getSupabaseUrl(), getSupabaseServiceRole() || getSupabaseAnonKey(), {
+            auth: { autoRefreshToken: false, persistSession: false },
+            realtime: { transport: ws }
+          });
+          await supabaseAdmin.from('payment_receipts').insert([{
+            email,
+            plan_id: planId,
+            receipt_data: receiptData,
+            ref_code: refCode,
+            status: 'pending'
+          }]);
+        } catch (dbErr: any) {
+          console.error('Failed to store receipt in Supabase:', dbErr.message);
+        }
+      }
+
+      // Send receipt confirmation email
+      try {
+        await trySendEmail(
+          email,
+          'SPT OFFICIAL - Payment Receipt Received',
+          `<div style="font-family: monospace; padding: 20px; background: #0a0a1a; color: #fff;">
+            <h2 style="color: #00f0ff;">Payment Receipt Received</h2>
+            <p>Thank you for your payment! We have received your receipt.</p>
+            ${refCode ? `<p>Reference Code: <strong>${refCode}</strong></p>` : ''}
+            <p>We will verify your payment and activate your subscription within 24 hours.</p>
+            <hr style="border-color: #333;" />
+            <p style="color: #888;">SPT OFFICIAL - Sadeep Pasindu Creative Universe</p>
+          </div>`
+        );
+      } catch (emailErr) {
+        console.error('Failed to send receipt confirmation:', emailErr);
+      }
+
+      res.json({ success: true, message: 'Receipt submitted successfully' });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || 'Failed to process receipt' });
+    }
+  });
+
+  // Profile update notification endpoint
+  app.post("/api/profile/update", async (req, res) => {
+    try {
+      const { email, name } = req.body;
+      if (!email) return res.status(400).json({ error: 'Email required' });
+
+      const isSupabaseReady = getSupabaseUrl() && getSupabaseAnonKey();
+      if (isSupabaseReady) {
+        try {
+          const supabaseAdmin = createClient(getSupabaseUrl(), getSupabaseServiceRole() || getSupabaseAnonKey(), {
+            auth: { autoRefreshToken: false, persistSession: false },
+            realtime: { transport: ws }
+          });
+          await supabaseAdmin.from('profiles').upsert({
+            email: email.toLowerCase(),
+            name: name || email.split('@')[0],
+            updated_at: new Date().toISOString()
+          }, { onConflict: 'email' });
+        } catch (dbErr: any) {
+          console.error('Failed to update profile in Supabase:', dbErr.message);
+        }
+      }
+
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || 'Failed to update profile' });
+    }
+  });
+
+  // Serve uploaded files statically
+  const uploadsPath = path.join(process.cwd(), 'dist', 'uploads');
+  if (fs.existsSync(uploadsPath)) {
+    app.use('/uploads', express.static(uploadsPath));
+  }
+
   // System health check
   app.get("/api/system/health", async (req, res) => {
     try {
@@ -951,6 +1062,12 @@ async function startServer() {
     app.get('*', (req, res) => {
       res.sendFile(path.join(distPath, 'index.html'));
     });
+  }
+
+  // Ensure uploads directory exists
+  const uploadsDir = path.join(process.cwd(), 'dist', 'uploads');
+  if (!fs.existsSync(uploadsDir)) {
+    fs.mkdirSync(uploadsDir, { recursive: true });
   }
 
   app.listen(PORT, "0.0.0.0", () => {
