@@ -34,6 +34,7 @@ export default function SptUniverseGate({ onClose, onSuccess, language = 'en' }:
   const [confirmNewPassword, setConfirmNewPassword] = useState<string>('');
   const [showNewPassword, setShowNewPassword] = useState<boolean>(false);
   const [showConfirmNewPassword, setShowConfirmNewPassword] = useState<boolean>(false);
+  const [isOtpResetFlow, setIsOtpResetFlow] = useState<boolean>(false);
 
   // Language translation helper helper
   const gt = (siText: string, enText: string) => (language === 'si' ? siText : enText);
@@ -45,6 +46,9 @@ export default function SptUniverseGate({ onClose, onSuccess, language = 'en' }:
     setSuccessMessage('');
     if (newView === 'otp' || newView === 'forgot_otp') {
       setOtpPin(Array(6).fill(''));
+    }
+    if (newView !== 'reset_password') {
+      setIsOtpResetFlow(false);
     }
   };
 
@@ -134,6 +138,10 @@ export default function SptUniverseGate({ onClose, onSuccess, language = 'en' }:
     }
     if (password.length < 6) {
       setErrorMessage(gt('මුරපදය සඳහා අවම වශයෙන් අක්ෂර 6ක්වත් අවශ්‍ය වේ.', 'Password must be at least 6 characters long.'));
+      return;
+    }
+    if (password.length > 128) {
+      setErrorMessage(gt('මුරපදය උපරිම අක්ෂර 128ක් විය යුතුය.', 'Password must be at most 128 characters long.'));
       return;
     }
     if (password !== rePassword) {
@@ -260,7 +268,7 @@ export default function SptUniverseGate({ onClose, onSuccess, language = 'en' }:
     }
   };
 
-  // 6. Forgot Password Handler (Real Supabase Logic)
+  // 6. Forgot Password Handler — sends OTP + reset link via our server
   const handleForgotSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage('');
@@ -273,27 +281,36 @@ export default function SptUniverseGate({ onClose, onSuccess, language = 'en' }:
 
     setIsLoading(true);
     try {
-      const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: `${window.location.origin}/reset-password`,
+      const res = await fetch('/api/forgot-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
       });
-      if (error) throw error;
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to send reset code');
+
       setSuccessMessage(
-        gt(
-          '🔐 SPT OFFICIAL: මුරපදය යළි සැකසීමට අවශ්‍ය OTP කේතය සහ සබැඳිය ඔබගේ ඊමේල් ලිපිනයට ලැබී ඇත. කරුණාකර ඔබගේ Inbox පරීක්ෂා කරන්න. (SPAM බලන්න)',
-          '🔐 SPT OFFICIAL: A password reset OTP code and recovery link have been sent to your email. Please check your inbox (and SPAM folder).'
-        )
+        data.otp
+          ? gt(
+              `🔐 SPT OFFICIAL: ඔබගේ OTP කේතය: ${data.otp}`,
+              `🔐 SPT OFFICIAL: Your OTP code: ${data.otp}`
+            )
+          : gt(
+              '🔐 SPT OFFICIAL: මුරපදය යළි සැකසීමට අවශ්‍ය OTP කේතය සහ සබැඳිය ඔබගේ ඊමේල් ලිපිනයට ලැබී ඇත. කරුණාකර ඔබගේ Inbox පරීක්ෂා කරන්න. (SPAM බලන්න)',
+              '🔐 SPT OFFICIAL: A password reset OTP code and recovery link have been sent to your email. Please check your inbox (and SPAM folder).'
+            )
       );
       setTimeout(() => {
         handleViewChange('forgot_otp');
-      }, 3000);
+      }, 1500);
     } catch (err: any) {
-      setErrorMessage(err.message || gt('ඊමේල් එක يැවීමේදී දෝෂයක් මතු විය.', 'Error sending recovery transmission.'));
+      setErrorMessage(err.message || gt('ඊමේල් එක යැවීමේදී දෝෂයක් මතු විය.', 'Error sending recovery transmission.'));
     } finally {
       setIsLoading(false);
     }
   };
 
-  // 6. Forgot OTP PIN Verification Handler
+  // 6. Forgot OTP PIN Verification Handler — verify via our server
   const handleForgotOtpSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage('');
@@ -307,13 +324,15 @@ export default function SptUniverseGate({ onClose, onSuccess, language = 'en' }:
 
     setIsLoading(true);
     try {
-      const { data, error } = await supabase.auth.verifyOtp({
-        email,
-        token: finalPin,
-        type: 'recovery',
+      const res = await fetch('/api/verify-reset-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, otp: finalPin }),
       });
-      if (error) throw error;
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Invalid OTP');
 
+      setIsOtpResetFlow(true);
       setSuccessMessage(gt(
         '🔐 SPT OFFICIAL: ආරක්ෂිත කේතය සාර්ථකව තහවුරු විය! දැන් ඔබට නව මුරපදය ඇතුළත් කළ හැක.',
         '🔐 SPT OFFICIAL: Security code verified! You can now set a new password.'
@@ -343,6 +362,10 @@ export default function SptUniverseGate({ onClose, onSuccess, language = 'en' }:
       setErrorMessage(gt('මුරපදය සඳහා අවම වශයෙන් අක්ෂර 6ක්වත් අවශ්‍ය වේ.', 'Security matrix constraint: Password must be at least 6 characters.'));
       return;
     }
+    if (newPassword.length > 128) {
+      setErrorMessage(gt('මුරපදය උපරිම අක්ෂර 128ක් විය යුතුය.', 'Password must be at most 128 characters long.'));
+      return;
+    }
 
     if (newPassword !== confirmNewPassword) {
       setErrorMessage(gt('ඇතුළත් කළ මුරපදයන් එකිනෙකට නොගැලපේ.', 'Encryption mismatch: password entries must perfectly align.'));
@@ -351,10 +374,18 @@ export default function SptUniverseGate({ onClose, onSuccess, language = 'en' }:
 
     setIsLoading(true);
     try {
-      const { data, error } = await supabase.auth.updateUser({
-        password: newPassword,
-      });
-      if (error) throw error;
+      if (isOtpResetFlow) {
+        const res = await fetch('/api/reset-password-with-otp', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, newPassword }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed to reset password');
+      } else {
+        const { error } = await supabase.auth.updateUser({ password: newPassword });
+        if (error) throw error;
+      }
 
       setSuccessMessage(gt(
         '✅ සුභ පැතුම්! ඔබගේ SPT OFFICIAL ගිණුමේ මුරපදය සාර්ථකව යාවත්කාලීන කරන ලදී!',
@@ -362,11 +393,9 @@ export default function SptUniverseGate({ onClose, onSuccess, language = 'en' }:
       ));
       
       setTimeout(() => {
+        setIsOtpResetFlow(false);
         if (onSuccess) {
-          onSuccess({
-            email: data.user?.email || email,
-            name: data.user?.user_metadata?.full_name || email.split('@')[0]
-          });
+          onSuccess({ email, name: email.split('@')[0] });
         }
       }, 1500);
     } catch (err: any) {
@@ -645,8 +674,17 @@ export default function SptUniverseGate({ onClose, onSuccess, language = 'en' }:
                         value={password}
                         onChange={e => setPassword(e.target.value)}
                         placeholder="******"
+                        maxLength={128}
                         className="w-full px-3.5 py-2 text-xs bg-white/[0.04] border border-white/10 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500/50 focus:ring-1 focus:ring-cyan-500/20 transition-all"
                       />
+                      <p className="mt-1 text-[9px] font-mono text-slate-500">
+                        {gt('අකුරු 6-128 අතර විය යුතුය', '6-128 characters required')}
+                        {password.length > 0 && (
+                          <span className={password.length >= 6 && password.length <= 128 ? ' text-green-400 ml-1' : ' text-amber-400 ml-1'}>
+                            ({password.length}/128)
+                          </span>
+                        )}
+                      </p>
                     </div>
                     <div>
                       <label className="block text-[10px] font-mono text-slate-400 uppercase mb-1 tracking-wider">
@@ -658,8 +696,14 @@ export default function SptUniverseGate({ onClose, onSuccess, language = 'en' }:
                         value={rePassword}
                         onChange={e => setRePassword(e.target.value)}
                         placeholder="******"
-                        className="w-full px-3.5 py-2 text-xs bg-white/[0.04] border border-white/10 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500/50 focus:ring-1 focus:ring-cyan-500/20 transition-all"
+                        maxLength={128}
+                        className={`w-full px-3.5 py-2 text-xs bg-white/[0.04] border rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500/50 focus:ring-1 focus:ring-cyan-500/20 transition-all ${rePassword && password !== rePassword ? 'border-red-500/50' : 'border-white/10'}`}
                       />
+                      {rePassword && password !== rePassword && (
+                        <p className="mt-1 text-[9px] font-mono text-red-400">
+                          {gt('මුරපදයන් නොගැලපේ', 'Passwords do not match')}
+                        </p>
+                      )}
                     </div>
                   </div>
 
@@ -901,11 +945,18 @@ export default function SptUniverseGate({ onClose, onSuccess, language = 'en' }:
                       setSuccessMessage('');
                       setIsLoading(true);
                       try {
-                        const { error } = await supabase.auth.resetPasswordForEmail(email, {
-                          redirectTo: `${window.location.origin}/reset-password`,
+                        const res = await fetch('/api/forgot-password', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ email }),
                         });
-                        if (error) throw error;
-                        setSuccessMessage(gt('✅ Reset කේතය නැවත එවා ඇත. SPAM බලන්න.', '✅ Reset code resent. Check SPAM.'));
+                        const data = await res.json();
+                        if (!res.ok) throw new Error(data.error || 'Failed to resend');
+                        setSuccessMessage(
+                          data.otp
+                            ? gt(`✅ නව Reset කේතය: ${data.otp}`, `✅ New Reset Code: ${data.otp}`)
+                            : gt('✅ Reset කේතය නැවත එවා ඇත. SPAM බලන්න.', '✅ Reset code resent. Check SPAM.')
+                        );
                       } catch (err: any) {
                         setErrorMessage(err.message || gt('නැවත එවීමට අපොහොසත් විය.', 'Failed to resend.'));
                       } finally {
@@ -961,6 +1012,7 @@ export default function SptUniverseGate({ onClose, onSuccess, language = 'en' }:
                         value={newPassword}
                         onChange={e => setNewPassword(e.target.value)}
                         placeholder="******"
+                        maxLength={128}
                         className="w-full pl-10 pr-10 py-2.5 text-xs bg-white/[0.04] border border-white/10 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500/50 focus:ring-1 focus:ring-cyan-500/20 transition-all font-mono backdrop-blur-md"
                       />
                       <button
@@ -971,6 +1023,14 @@ export default function SptUniverseGate({ onClose, onSuccess, language = 'en' }:
                         {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                       </button>
                     </div>
+                    <p className="mt-1 text-[9px] font-mono text-slate-500">
+                      {gt('අකුරු 6-128 අතර විය යුතුය', '6-128 characters required')}
+                      {newPassword.length > 0 && (
+                        <span className={newPassword.length >= 6 && newPassword.length <= 128 ? ' text-green-400 ml-1' : ' text-amber-400 ml-1'}>
+                          ({newPassword.length}/128)
+                        </span>
+                      )}
+                    </p>
                   </div>
 
                   <div>
@@ -985,7 +1045,8 @@ export default function SptUniverseGate({ onClose, onSuccess, language = 'en' }:
                         value={confirmNewPassword}
                         onChange={e => setConfirmNewPassword(e.target.value)}
                         placeholder="******"
-                        className="w-full pl-10 pr-10 py-2.5 text-xs bg-white/[0.04] border border-white/10 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500/50 focus:ring-1 focus:ring-cyan-500/20 transition-all font-mono backdrop-blur-md"
+                        maxLength={128}
+                        className={`w-full pl-10 pr-10 py-2.5 text-xs bg-white/[0.04] border rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500/50 focus:ring-1 focus:ring-cyan-500/20 transition-all font-mono backdrop-blur-md ${confirmNewPassword && newPassword !== confirmNewPassword ? 'border-red-500/50' : 'border-white/10'}`}
                       />
                       <button
                         type="button"
@@ -995,6 +1056,11 @@ export default function SptUniverseGate({ onClose, onSuccess, language = 'en' }:
                         {showConfirmNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                       </button>
                     </div>
+                    {confirmNewPassword && newPassword !== confirmNewPassword && (
+                      <p className="mt-1 text-[9px] font-mono text-red-400">
+                        {gt('මුරපදයන් නොගැලපේ', 'Passwords do not match')}
+                      </p>
+                    )}
                   </div>
 
                   <button
