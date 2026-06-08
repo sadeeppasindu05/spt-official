@@ -492,6 +492,11 @@ export default function App() {
 
     // Listen for realtime auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (event === 'PASSWORD_RECOVERY') {
+        setShowLoginWall(true);
+        setRecoveryMode(true);
+        return;
+      }
       if (session?.user) {
         const email = session.user.email || '';
         const name = session.user.user_metadata?.full_name || email.split('@')[0];
@@ -1660,6 +1665,7 @@ export default function App() {
   }, [activeTab, customerSession, sptUsersList]);
 
   const [showLoginWall, setShowLoginWall] = useState(false);
+  const [recoveryMode, setRecoveryMode] = useState(false);
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPass, setLoginPass] = useState('');
   const [loginName, setLoginName] = useState('');
@@ -4180,10 +4186,13 @@ export default function App() {
               </button>
               <SptUniverseGate
                 language={language}
+                recoveryMode={recoveryMode}
                 onClose={() => {
                   setShowLoginWall(false);
+                  setRecoveryMode(false);
                 }}
                 onSuccess={async (userData, isSignUp) => {
+                  setRecoveryMode(false);
                   const resolvedEmail = userData.email.toLowerCase().trim();
                   const displayName = userData.name || resolvedEmail.split('@')[0];
                   

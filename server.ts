@@ -397,6 +397,7 @@ async function startServer() {
       const { email, newPassword } = req.body;
       if (!email || !newPassword) return res.status(400).json({ error: 'Email and new password required' });
       if (newPassword.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters' });
+      if (newPassword.length > 16) return res.status(400).json({ error: 'Password must be at most 16 characters' });
 
       const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
       const serviceRole = process.env.SUPABASE_SERVICE_ROLE_KEY;

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Lock, Mail, User, ShieldCheck, ArrowRight, Eye, EyeOff, Sparkles, AlertCircle, CheckCircle2, ChevronLeft, Key } from 'lucide-react';
 import { supabase } from '../supabaseClient'; 
@@ -9,13 +9,24 @@ interface SptUniverseGateProps {
   onClose?: () => void;
   onSuccess?: (userData: { email: string; name?: string; password?: string }, isSignUp?: boolean) => void;
   language?: 'si' | 'en';
+  recoveryMode?: boolean;
 }
 
-export default function SptUniverseGate({ onClose, onSuccess, language = 'en' }: SptUniverseGateProps) {
-  const [view, setView] = useState<GateView>('login');
+export default function SptUniverseGate({ onClose, onSuccess, language = 'en', recoveryMode }: SptUniverseGateProps) {
+  const [view, setView] = useState<GateView>(recoveryMode ? 'reset_password' : 'login');
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [errorMesssage, setErrorMessage] = useState<string>('');
   const [successMessage, setSuccessMessage] = useState<string>('');
+
+  // Show success message if coming from recovery link
+  useEffect(() => {
+    if (recoveryMode) {
+      setSuccessMessage(gt(
+        '🔐 ආරක්ෂිත සබැඳිය තහවුරු කරන ලදී. කරුණාකර නව මුරපදයක් ඇතුළත් කරන්න.',
+        '🔐 Recovery link verified. Please enter a new password.'
+      ));
+    }
+  }, []);
 
   // Password Visibility toggles
   const [showPassword, setShowPassword] = useState<boolean>(false);
@@ -140,8 +151,8 @@ export default function SptUniverseGate({ onClose, onSuccess, language = 'en' }:
       setErrorMessage(gt('මුරපදය සඳහා අවම වශයෙන් අක්ෂර 6ක්වත් අවශ්‍ය වේ.', 'Password must be at least 6 characters long.'));
       return;
     }
-    if (password.length > 128) {
-      setErrorMessage(gt('මුරපදය උපරිම අක්ෂර 128ක් විය යුතුය.', 'Password must be at most 128 characters long.'));
+    if (password.length > 16) {
+      setErrorMessage(gt('මුරපදය උපරිම අක්ෂර 16ක් විය යුතුය.', 'Password must be at most 16 characters long.'));
       return;
     }
     if (password !== rePassword) {
@@ -292,12 +303,12 @@ export default function SptUniverseGate({ onClose, onSuccess, language = 'en' }:
       setSuccessMessage(
         data.otp
           ? gt(
-              `🔐 SPT OFFICIAL: ඔබගේ OTP කේතය: ${data.otp}`,
-              `🔐 SPT OFFICIAL: Your OTP code: ${data.otp}`
+              `🔐 SPT OFFICIAL: ඔබගේ OTP කේතය: ${data.otp}. ඔබගේ ඊමේල් එකේ එවා ඇති සබැඳිය ක්ලික් කරන්න.`,
+              `🔐 SPT OFFICIAL: Your OTP code: ${data.otp}. Also click the reset link in your email.`
             )
           : gt(
-              '🔐 SPT OFFICIAL: මුරපදය යළි සැකසීමට අවශ්‍ය OTP කේතය සහ සබැඳිය ඔබගේ ඊමේල් ලිපිනයට ලැබී ඇත. කරුණාකර ඔබගේ Inbox පරීක්ෂා කරන්න. (SPAM බලන්න)',
-              '🔐 SPT OFFICIAL: A password reset OTP code and recovery link have been sent to your email. Please check your inbox (and SPAM folder).'
+              '🔐 SPT OFFICIAL: ඔබගේ ඊමේල් ලිපිනයට මුරපදය යළි සැකසීමේ සබැඳියක් එවා ඇත. කරුණාකර ඔබගේ Inbox පරීක්ෂා කරන්න (SPAM බලන්න). සබැඳිය ක්ලික් කළ පසු නව මුරපදයක් ඇතුළත් කළ හැක.',
+              '🔐 SPT OFFICIAL: A password reset link has been sent to your email. Please check your inbox (and SPAM folder). Click the link to set a new password.'
             )
       );
       setTimeout(() => {
@@ -362,8 +373,8 @@ export default function SptUniverseGate({ onClose, onSuccess, language = 'en' }:
       setErrorMessage(gt('මුරපදය සඳහා අවම වශයෙන් අක්ෂර 6ක්වත් අවශ්‍ය වේ.', 'Security matrix constraint: Password must be at least 6 characters.'));
       return;
     }
-    if (newPassword.length > 128) {
-      setErrorMessage(gt('මුරපදය උපරිම අක්ෂර 128ක් විය යුතුය.', 'Password must be at most 128 characters long.'));
+    if (newPassword.length > 16) {
+      setErrorMessage(gt('මුරපදය උපරිම අක්ෂර 16ක් විය යුතුය.', 'Password must be at most 16 characters long.'));
       return;
     }
 
@@ -392,10 +403,11 @@ export default function SptUniverseGate({ onClose, onSuccess, language = 'en' }:
         '✅ Congratulations! Your SPT OFFICIAL account password has been successfully updated!'
       ));
       
-      setTimeout(() => {
+      setTimeout(async () => {
         setIsOtpResetFlow(false);
+        const resolvedEmail = email || (await supabase.auth.getSession()).data.session?.user?.email || '';
         if (onSuccess) {
-          onSuccess({ email, name: email.split('@')[0] });
+          onSuccess({ email: resolvedEmail, name: resolvedEmail.split('@')[0] });
         }
       }, 1500);
     } catch (err: any) {
@@ -674,14 +686,14 @@ export default function SptUniverseGate({ onClose, onSuccess, language = 'en' }:
                         value={password}
                         onChange={e => setPassword(e.target.value)}
                         placeholder="******"
-                        maxLength={128}
+                        maxLength={16}
                         className="w-full px-3.5 py-2 text-xs bg-white/[0.04] border border-white/10 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500/50 focus:ring-1 focus:ring-cyan-500/20 transition-all"
                       />
                       <p className="mt-1 text-[9px] font-mono text-slate-500">
-                        {gt('අකුරු 6-128 අතර විය යුතුය', '6-128 characters required')}
+                        {gt('අකුරු 6-16 අතර විය යුතුය', '6-16 characters required')}
                         {password.length > 0 && (
-                          <span className={password.length >= 6 && password.length <= 128 ? ' text-green-400 ml-1' : ' text-amber-400 ml-1'}>
-                            ({password.length}/128)
+                          <span className={password.length >= 6 && password.length <= 16 ? ' text-green-400 ml-1' : ' text-amber-400 ml-1'}>
+                            ({password.length}/16)
                           </span>
                         )}
                       </p>
@@ -696,7 +708,7 @@ export default function SptUniverseGate({ onClose, onSuccess, language = 'en' }:
                         value={rePassword}
                         onChange={e => setRePassword(e.target.value)}
                         placeholder="******"
-                        maxLength={128}
+                        maxLength={16}
                         className={`w-full px-3.5 py-2 text-xs bg-white/[0.04] border rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500/50 focus:ring-1 focus:ring-cyan-500/20 transition-all ${rePassword && password !== rePassword ? 'border-red-500/50' : 'border-white/10'}`}
                       />
                       {rePassword && password !== rePassword && (
@@ -1012,7 +1024,7 @@ export default function SptUniverseGate({ onClose, onSuccess, language = 'en' }:
                         value={newPassword}
                         onChange={e => setNewPassword(e.target.value)}
                         placeholder="******"
-                        maxLength={128}
+                        maxLength={16}
                         className="w-full pl-10 pr-10 py-2.5 text-xs bg-white/[0.04] border border-white/10 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500/50 focus:ring-1 focus:ring-cyan-500/20 transition-all font-mono backdrop-blur-md"
                       />
                       <button
@@ -1024,10 +1036,10 @@ export default function SptUniverseGate({ onClose, onSuccess, language = 'en' }:
                       </button>
                     </div>
                     <p className="mt-1 text-[9px] font-mono text-slate-500">
-                      {gt('අකුරු 6-128 අතර විය යුතුය', '6-128 characters required')}
+                      {gt('අකුරු 6-16 අතර විය යුතුය', '6-16 characters required')}
                       {newPassword.length > 0 && (
-                        <span className={newPassword.length >= 6 && newPassword.length <= 128 ? ' text-green-400 ml-1' : ' text-amber-400 ml-1'}>
-                          ({newPassword.length}/128)
+                        <span className={newPassword.length >= 6 && newPassword.length <= 16 ? ' text-green-400 ml-1' : ' text-amber-400 ml-1'}>
+                          ({newPassword.length}/16)
                         </span>
                       )}
                     </p>
@@ -1045,7 +1057,7 @@ export default function SptUniverseGate({ onClose, onSuccess, language = 'en' }:
                         value={confirmNewPassword}
                         onChange={e => setConfirmNewPassword(e.target.value)}
                         placeholder="******"
-                        maxLength={128}
+                        maxLength={16}
                         className={`w-full pl-10 pr-10 py-2.5 text-xs bg-white/[0.04] border rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500/50 focus:ring-1 focus:ring-cyan-500/20 transition-all font-mono backdrop-blur-md ${confirmNewPassword && newPassword !== confirmNewPassword ? 'border-red-500/50' : 'border-white/10'}`}
                       />
                       <button
