@@ -155,7 +155,7 @@ export default function SptUniverseGate({ onClose, onSuccess, language = 'en' }:
       userId = data.user?.id || '';
       setPendingUserId(userId);
 
-      // Send OTP via our server (Gmail SMTP)
+      // Send OTP via our server (Gmail SMTP or Supabase fallback)
       const otpRes = await fetch('/api/send-otp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -164,11 +164,30 @@ export default function SptUniverseGate({ onClose, onSuccess, language = 'en' }:
       const otpData = await otpRes.json();
       if (!otpRes.ok) throw new Error(otpData.error || 'Failed to send OTP email');
 
-      setSuccessMessage(gt(
-        '✅ SPT OFFICIAL: ඔබගේ ඊමේල් ලිපිනයට 6-ඉලක්කම් OTP කේතයක් එවා ඇත. කරුණාකර ඔබගේ ඊමේල් ලිපිනය පරීක්ෂා කරන්න (SPAM බලන්න).',
-        '✅ SPT OFFICIAL: A 6-digit verification code has been sent to your email. Please check your inbox (and SPAM).'
-      ));
-      setView('otp');
+      if (otpData.method === 'smtp') {
+        setSuccessMessage(gt(
+          '✅ SPT OFFICIAL: ඔබගේ ඊමේල් ලිපිනයට 6-ඉලක්කම් OTP කේතයක් එවා ඇත. කරුණාකර ඔබගේ ඊමේල් ලිපිනය පරීක්ෂා කරන්න (SPAM බලන්න).',
+          '✅ SPT OFFICIAL: A 6-digit verification code has been sent to your email. Please check your inbox (and SPAM).'
+        ));
+        setView('otp');
+      } else if (otpData.method === 'supabase') {
+        setSuccessMessage(gt(
+          '✅ SPT OFFICIAL: ඔබගේ ඊමේල් ලිපිනයට තහවුරු කිරීමේ ඊමේල් එකක් එවා ඇත. කරුණාකර ඔබගේ ඊමේල් ලිපිනය පරීක්ෂා කරන්න (SPAM බලන්න). ලින්ක් එක ක්ලික් කර ගිණුම සක්‍රිය කරන්න.',
+          '✅ SPT OFFICIAL: A confirmation email has been sent to your email. Please check your inbox (and SPAM). Click the link to activate your account.'
+        ));
+        // Wait a bit then redirect to login
+        setTimeout(() => {
+          setSuccessMessage('');
+          setView('login');
+        }, 5000);
+      } else {
+        // Dev/log mode — show OTP directly
+        setSuccessMessage(gt(
+          `✅ SPT OFFICIAL: ඔබගේ OTP කේතය: ${otpData.otp}. (Development mode - email service not configured)`,
+          `✅ SPT OFFICIAL: Your OTP code: ${otpData.otp}. (Development mode - no email service)`
+        ));
+        setView('otp');
+      }
     } catch (err: any) {
       setErrorMessage(err.message || gt('ලියාපදිංචි වීමේදී දෝෂයක් මතු විය.', 'Error signing up. Please try again.'));
     } finally {
@@ -227,7 +246,13 @@ export default function SptUniverseGate({ onClose, onSuccess, language = 'en' }:
       });
       const otpData = await otpRes.json();
       if (!otpRes.ok) throw new Error(otpData.error || 'Failed to resend OTP');
-      setSuccessMessage(gt('✅ OTP කේතය නැවත එවා ඇත. කරුණාකර ඔබගේ ඊමේල් ලිපිනය පරීක්ෂා කරන්න (SPAM බලන්න).', '✅ OTP code resent. Please check your inbox (and SPAM folder).'));
+      if (otpData.method === 'smtp') {
+        setSuccessMessage(gt('✅ OTP කේතය නැවත එවා ඇත. කරුණාකර ඔබගේ ඊමේල් ලිපිනය පරීක්ෂා කරන්න (SPAM බලන්න).', '✅ OTP code resent. Please check your inbox (and SPAM folder).'));
+      } else if (otpData.method === 'supabase') {
+        setSuccessMessage(gt('✅ තහවුරු කිරීමේ ඊමේල් එක නැවත එවා ඇත. කරුණාකර ඔබගේ ඊමේල් ලිපිනය පරීක්ෂා කරන්න.', '✅ Confirmation email resent. Please check your inbox.'));
+      } else {
+        setSuccessMessage(gt(`✅ ඔබගේ OTP කේතය: ${otpData.otp}`, `✅ Your OTP code: ${otpData.otp}`));
+      }
     } catch (err: any) {
       setErrorMessage(err.message || gt('OTP කේතය නැවත එවීමට අපොහොසත් විය.', 'Failed to resend OTP code.'));
     } finally {
