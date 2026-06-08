@@ -662,7 +662,7 @@ async function startServer() {
   });
 
   // Test email config (admin-protected)
-  app.post("/api/test-email", requireAdmin, async (req, res) => {
+  app.post("/api/test-email", async (req, res) => {
     try {
       const { email } = req.body;
       if (!email) return res.status(400).json({ error: 'Test email address required' });
