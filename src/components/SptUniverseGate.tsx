@@ -161,36 +161,25 @@ export default function SptUniverseGate({ onClose, onSuccess, language = 'en', r
         },
       });
       if (error) throw error;
-      const userId = data.user?.id || '';
 
-      // Auto-confirm user via server (Supabase Admin API — no SMTP needed)
-      const confirmRes = await fetch('/api/send-otp', {
+      // Send confirmation email via server (nodemailer)
+      const confirmRes = await fetch('/api/send-confirmation', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, userId }),
+        body: JSON.stringify({ email }),
       });
-      const confirmData = await confirmRes.json();
-      if (!confirmRes.ok) throw new Error(confirmData.error || 'Failed to activate account');
+      if (!confirmRes.ok) {
+        await fetch('/api/send-otp', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, userId: data.user?.id || '' }),
+        });
+      }
 
       setSuccessMessage(gt(
-        '✅ සුභ පැතුම්! ඔබගේ SPT OFFICIAL ගිණුම සාර්ථකව සක්‍රිය කරන ලදී! ස්වයංක්‍රීයව පිවිසෙමින්...',
-        '✅ Congratulations! Your SPT OFFICIAL account has been activated! Auto-logging in...'
+        '✅ ලියාපදිංචිය සාර්ථකයි! ඔබගේ ඊමේල් ලිපිනයට තහවුරු කිරීමේ සබැඳියක් එවා ඇත. කරුණාකර ඔබගේ Inbox (සහ SPAM) පරීක්ෂා කරන්න.',
+        '✅ Registration successful! A confirmation link has been sent to your email. Please check your inbox (and SPAM folder).'
       ));
-      // Auto-login after successful signup
-      setTimeout(async () => {
-        try {
-          const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
-          if (!signInError && onSuccess) {
-            onSuccess({ email, name: fullName, password });
-          } else {
-            setView('login');
-            setPassword('');
-          }
-        } catch {
-          setView('login');
-          setPassword('');
-        }
-      }, 1500);
     } catch (err: any) {
       setErrorMessage(err.message || gt('ලියාපදිංචි වීමේදී දෝෂයක් මතු විය.', 'Error signing up. Please try again.'));
     } finally {

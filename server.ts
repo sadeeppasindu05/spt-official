@@ -228,7 +228,55 @@ async function startServer() {
     }
   });
 
-  // Signup — confirm user via Supabase Admin API (no SMTP needed)
+  // Send confirmation email via nodemailer (Gmail SMTP)
+  app.post("/api/send-confirmation", async (req, res) => {
+    try {
+      const { email } = req.body;
+      if (!email) return res.status(400).json({ error: 'Email required' });
+
+      const supabaseUrl = getSupabaseUrl();
+      const serviceRole = getSupabaseServiceRole();
+      if (!supabaseUrl || !serviceRole) return res.status(500).json({ error: 'Server config error' });
+
+      const supabaseAdmin = createClient(supabaseUrl, serviceRole, {
+        auth: { autoRefreshToken: false, persistSession: false }
+      });
+
+      // Generate confirmation link
+      const { data: linkData, error: linkError } = await supabaseAdmin.auth.admin.generateLink({
+        type: 'signup',
+        email,
+        options: { redirectTo: `${getAppUrl(req)}/auth/callback` },
+      });
+      if (linkError) throw linkError;
+
+      const actionLink = linkData?.properties?.action_link;
+      if (!actionLink) throw new Error('Failed to generate confirmation link');
+
+      // Send via nodemailer
+      const transporter = getTransporter();
+      if (!transporter) throw new Error('Gmail SMTP not configured');
+
+      await transporter.sendMail({
+        from: `"SPT OFFICIAL" <${process.env.GMAIL_EMAIL}>`,
+        to: email,
+        subject: 'SPT OFFICIAL - Confirm Your Email Address',
+        html: `<div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:24px;background:#0f172a;color:#e2e8f0;border-radius:12px">
+          <h2 style="color:#06b6d4;margin:0 0 16px">SPT OFFICIAL</h2>
+          <p>Thank you for registering! Click the button below to confirm your email address and activate your account.</p>
+          <a href="${actionLink}" style="display:inline-block;padding:12px 24px;background:#06b6d4;color:#0f172a;text-decoration:none;font-weight:bold;border-radius:8px;margin:16px 0">Confirm Email</a>
+          <p style="color:#94a3b8;font-size:12px">If you didn't create an account, ignore this email.</p>
+        </div>`,
+      });
+
+      res.json({ success: true, sent: true });
+    } catch (err: any) {
+      console.error("Send confirmation error:", err);
+      res.status(500).json({ error: err.message || 'Failed to send confirmation email' });
+    }
+  });
+
+  // Signup — confirm user via Supabase Admin API (fallback)
   app.post("/api/send-otp", async (req, res) => {
     try {
       const { email, userId } = req.body;
