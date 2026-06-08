@@ -168,27 +168,45 @@ export default function SptUniverseGate({ onClose, onSuccess, language = 'en', r
       });
       if (error) throw error;
 
-      // Send confirmation email via server (nodemailer)
+      // Try sending confirmation email via nodemailer
       const confirmRes = await fetch('/api/send-confirmation', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email }),
       });
-      if (!confirmRes.ok) {
+
+      if (confirmRes.ok) {
+        // Email (with link + OTP) sent successfully → show OTP input
+        setOtpMode('signup');
+        setOtpValue('');
+        setShowOtpInput(true);
+        setSuccessMessage(gt(
+          '✅ ලියාපදිංචිය සාර්ථකයි! ඔබගේ ඊමේල් ලිපිනයට OTP කේතයක් සහ තහවුරු කිරීමේ සබැඳියක් එවා ඇත. කරුණාකර ඔබගේ Inbox (සහ SPAM) පරීක්ෂා කරන්න.',
+          '✅ Registration successful! An OTP code and confirmation link have been sent to your email. Please check your inbox (and SPAM folder).'
+        ));
+      } else {
+        // Email sending failed → auto-confirm + auto-login
         await fetch('/api/send-otp', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ email, userId: data.user?.id || '' }),
         });
+        setSuccessMessage(gt(
+          '✅ සුභ පැතුම්! ඔබගේ ගිණුම සක්‍රිය කරන ලදී! ස්වයංක්‍රීයව පිවිසෙමින්...',
+          '✅ Congratulations! Your account has been activated! Auto-logging in...'
+        ));
+        setTimeout(async () => {
+          try {
+            const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
+            if (!signInError && onSuccess) {
+              onSuccess({ email, name: fullName, password });
+            } else {
+              setView('login');
+              setPassword('');
+            }
+          } catch { setView('login'); setPassword(''); }
+        }, 1500);
       }
-
-      setOtpMode('signup');
-      setOtpValue('');
-      setShowOtpInput(true);
-      setSuccessMessage(gt(
-        '✅ ලියාපදිංචිය සාර්ථකයි! ඔබගේ ඊමේල් ලිපිනයට තහවුරු කිරීමේ සබැඳියක් සහ OTP කේතයක් එවා ඇත. කරුණාකර ඔබගේ Inbox (සහ SPAM) පරීක්ෂා කරන්න.',
-        '✅ Registration successful! A confirmation link and OTP code have been sent to your email. Please check your inbox (and SPAM folder).'
-      ));
     } catch (err: any) {
       setErrorMessage(err.message || gt('ලියාපදිංචි වීමේදී දෝෂයක් මතු විය.', 'Error signing up. Please try again.'));
     } finally {
@@ -217,13 +235,22 @@ export default function SptUniverseGate({ onClose, onSuccess, language = 'en', r
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to send reset link');
 
-      setOtpMode('forgot');
       setOtpValue('');
-      setShowOtpInput(true);
-      setSuccessMessage(gt(
-        '🔐 SPT OFFICIAL: ඔබගේ ඊමේල් ලිපිනයට මුරපදය යළි සැකසීමේ සබැඳියක් සහ OTP කේතයක් එවා ඇත. කරුණාකර ඔබගේ Inbox (සහ SPAM) පරීක්ෂා කරන්න.',
-        '🔐 SPT OFFICIAL: A password reset link and OTP code have been sent to your email. Please check your inbox (and SPAM folder).'
-      ));
+      if (data.sent) {
+        setOtpMode('forgot');
+        setShowOtpInput(true);
+        setSuccessMessage(gt(
+          '🔐 SPT OFFICIAL: ඔබගේ ඊමේල් ලිපිනයට මුරපදය යළි සැකසීමේ සබැඳියක් සහ OTP කේතයක් එවා ඇත. කරුණාකර ඔබගේ Inbox (සහ SPAM) පරීක්ෂා කරන්න.',
+          '🔐 SPT OFFICIAL: A password reset link and OTP code have been sent to your email. Please check your inbox (and SPAM folder).'
+        ));
+      } else {
+        // Fallback: Supabase email sent
+        setSuccessMessage(gt(
+          '🔐 SPT OFFICIAL: ඔබගේ ඊමේල් ලිපිනයට මුරපදය යළි සැකසීමේ සබැඳියක් එවා ඇත. කරුණාකර ඔබගේ Inbox (සහ SPAM) පරීක්ෂා කරන්න.',
+          '🔐 SPT OFFICIAL: A password reset link has been sent to your email. Please check your inbox (and SPAM folder).'
+        ));
+        setTimeout(() => handleViewChange('login'), 4000);
+      }
     } catch (err: any) {
       setErrorMessage(err.message || gt('ඊමේල් එක යැවීමේදී දෝෂයක් මතු විය.', 'Error sending recovery transmission.'));
     } finally {
@@ -297,8 +324,8 @@ export default function SptUniverseGate({ onClose, onSuccess, language = 'en', r
     e.preventDefault();
     setErrorMessage('');
     setSuccessMessage('');
-    if (!otpValue || otpValue.length !== 6) {
-      setErrorMessage(gt('කරුණාකර 6-ඉලක්කම් OTP කේතය ඇතුළත් කරන්න.', 'Please enter the 6-digit OTP code.'));
+    if (!otpValue || otpValue.length < 6 || otpValue.length > 8) {
+      setErrorMessage(gt('කරුණාකර 6-8 ඉලක්කම් අතර OTP කේතය ඇතුළත් කරන්න.', 'Please enter the 6-8 digit OTP code.'));
       return;
     }
     setIsLoading(true);
@@ -716,13 +743,13 @@ export default function SptUniverseGate({ onClose, onSuccess, language = 'en', r
                       type="text"
                       required
                       value={otpValue}
-                      onChange={e => setOtpValue(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                      onChange={e => setOtpValue(e.target.value.replace(/\D/g, '').slice(0, 8))}
                       placeholder="000000"
-                      maxLength={6}
+                      maxLength={8}
                       className="w-full px-3.5 py-3 text-lg text-center tracking-[8px] bg-white/[0.04] border border-white/10 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500/50 focus:ring-1 focus:ring-cyan-500/20 transition-all font-mono"
                     />
                     <p className="mt-1 text-[9px] font-mono text-slate-500 text-center">
-                      {gt('ඊමේල් එකේ ඇති කේතය ඇතුළත් කරන්න', 'Enter the code from your email')}
+                      {gt('ඊමේල් එකේ ඇති 6-8 ඉලක්කම් කේතය ඇතුළත් කරන්න', 'Enter the 6-8 digit code from your email')}
                     </p>
                   </div>
 
