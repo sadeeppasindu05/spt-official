@@ -124,6 +124,7 @@ export default function SptUniverseGate({ onClose, onSuccess, language = 'en', r
       if (onSuccess) {
         onSuccess({ email: data.user.email || email, name: data.user.user_metadata?.full_name || email.split('@')[0], password });
       }
+      setPassword('');
     } catch (err: any) {
       setErrorMessage(
         err.message 
@@ -316,17 +317,20 @@ export default function SptUniverseGate({ onClose, onSuccess, language = 'en', r
         setSuccessMessage(gt('✅ ගිණුම තහවුරු කරන ලදී! ස්වයංක්‍රීයව පිවිසෙමින්...', '✅ Account confirmed! Auto-logging in...'));
         const { data: pwData } = await supabase.auth.getSession();
         if (pwData.session) {
+          setPassword('');
           if (onSuccess) onSuccess({ email: pwData.session.user.email || email });
         } else {
           // No session — sign in with stored password
           try {
             const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({ email, password });
+            setPassword('');
             if (!signInError && signInData.session && onSuccess) {
               onSuccess({ email: signInData.session.user.email || email });
             } else {
               setView('login');
             }
           } catch {
+            setPassword('');
             setView('login');
           }
         }

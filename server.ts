@@ -81,9 +81,41 @@ function getAppUrl(req?: express.Request) {
 }
 
 const otpStore: Map<string, { otp: string; email: string; userId?: string; expiresAt: number }> = new Map();
+const rateLimitMap: Map<string, { count: number; resetAt: number }> = new Map();
+
+function rateLimit(key: string, maxRequests: number, windowMs: number): boolean {
+  const now = Date.now();
+  const entry = rateLimitMap.get(key);
+  if (!entry || now > entry.resetAt) {
+    rateLimitMap.set(key, { count: 1, resetAt: now + windowMs });
+    return true;
+  }
+  if (entry.count >= maxRequests) return false;
+  entry.count++;
+  return true;
+}
+
+// Clean up expired rate limit entries every 5 minutes
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, entry] of rateLimitMap) {
+    if (now > entry.resetAt) rateLimitMap.delete(key);
+  }
+}, 300000);
+
+// Rate limit middleware factory
+function rateLimitMiddleware(maxRequests: number, windowMs: number) {
+  return (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    const ip = req.headers['x-forwarded-for']?.toString().split(',')[0]?.trim() || req.socket.remoteAddress || 'unknown';
+    if (!rateLimit(ip, maxRequests, windowMs)) {
+      return res.status(429).json({ error: 'Too many requests. Please wait before trying again.' });
+    }
+    next();
+  };
+}
 
 function generateOtp(): string {
-  return Math.floor(100000 + Math.random() * 900000).toString();
+  return String(crypto.randomInt(100000, 999999));
 }
 
 function getTransporter() {
@@ -454,7 +486,7 @@ async function startServer() {
   });
 
   // Send confirmation email via nodemailer (Gmail SMTP) with link + OTP
-  app.post("/api/send-confirmation", async (req, res) => {
+  app.post("/api/send-confirmation", rateLimitMiddleware(5, 60000), async (req, res) => {
     try {
       const { email } = req.body;
       if (!email) return res.status(400).json({ error: 'Email required' });
@@ -499,7 +531,7 @@ async function startServer() {
   });
 
   // Verify recovery OTP and return reset token
-  app.post("/api/verify-recovery-otp", async (req, res) => {
+  app.post("/api/verify-recovery-otp", rateLimitMiddleware(10, 60000), async (req, res) => {
     try {
       const { email, otp } = req.body;
       if (!email || !otp) return res.status(400).json({ error: 'Email and OTP required' });
@@ -560,7 +592,7 @@ async function startServer() {
   });
 
   // Verify OTP and confirm user (signup)
-  app.post("/api/verify-otp", async (req, res) => {
+  app.post("/api/verify-otp", rateLimitMiddleware(10, 60000), async (req, res) => {
     try {
       const { email, otp } = req.body;
       if (!email || !otp) return res.status(400).json({ error: 'Email and OTP required' });
@@ -643,7 +675,7 @@ async function startServer() {
   });
 
   // Forgot password — send recovery email via nodemailer (link + OTP)
-  app.post("/api/forgot-password", async (req, res) => {
+  app.post("/api/forgot-password", rateLimitMiddleware(5, 60000), async (req, res) => {
     try {
       const { email } = req.body;
       if (!email) return res.status(400).json({ error: 'Email required' });
