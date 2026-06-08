@@ -69,12 +69,14 @@ function getSupabaseServiceRole() {
 }
 
 function getAppUrl(req?: express.Request) {
-  if (process.env.APP_URL) return process.env.APP_URL.replace(/\/+$/, '');
+  // When a request is available, derive URL from it (handles proxies correctly)
   if (req) {
     const proto = req.headers['x-forwarded-proto'] || req.protocol;
     const host = req.headers['x-forwarded-host'] || req.get('host');
     return `${proto}://${host}`;
   }
+  // Fallback to APP_URL env or localhost when no request context
+  if (process.env.APP_URL) return process.env.APP_URL.replace(/\/+$/, '');
   return 'http://localhost:3000';
 }
 
