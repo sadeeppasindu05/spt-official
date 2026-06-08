@@ -72,6 +72,12 @@ function getAppUrl(req?: express.Request) {
   return 'http://localhost:3000';
 }
 
+const otpStore: Map<string, { otp: string; email: string; expiresAt: number }> = new Map();
+
+function generateOtp(): string {
+  return Math.floor(100000 + Math.random() * 900000).toString();
+}
+
 function getTransporter() {
   const gmailUser = process.env.GMAIL_EMAIL;
   const gmailPass = process.env.GMAIL_APP_PASSWORD;
@@ -228,7 +234,7 @@ async function startServer() {
     }
   });
 
-  // Send confirmation email via nodemailer (Gmail SMTP)
+  // Send confirmation email via nodemailer (Gmail SMTP) with link + OTP
   app.post("/api/send-confirmation", async (req, res) => {
     try {
       const { email } = req.body;
@@ -253,6 +259,10 @@ async function startServer() {
       const actionLink = linkData?.properties?.action_link;
       if (!actionLink) throw new Error('Failed to generate confirmation link');
 
+      // Generate and store OTP (expires in 10 min)
+      const otp = generateOtp();
+      otpStore.set(email.toLowerCase(), { otp, email: email.toLowerCase(), expiresAt: Date.now() + 600000 });
+
       // Send via nodemailer
       const transporter = getTransporter();
       if (!transporter) throw new Error('Gmail SMTP not configured');
@@ -263,16 +273,122 @@ async function startServer() {
         subject: 'SPT OFFICIAL - Confirm Your Email Address',
         html: `<div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:24px;background:#0f172a;color:#e2e8f0;border-radius:12px">
           <h2 style="color:#06b6d4;margin:0 0 16px">SPT OFFICIAL</h2>
-          <p>Thank you for registering! Click the button below to confirm your email address and activate your account.</p>
-          <a href="${actionLink}" style="display:inline-block;padding:12px 24px;background:#06b6d4;color:#0f172a;text-decoration:none;font-weight:bold;border-radius:8px;margin:16px 0">Confirm Email</a>
-          <p style="color:#94a3b8;font-size:12px">If you didn't create an account, ignore this email.</p>
+          <p>Thank you for registering! Confirm your email using one of these methods:</p>
+          <div style="background:#1e293b;border-radius:8px;padding:16px;margin:16px 0">
+            <p style="margin:0 0 8px"><strong>Method 1:</strong> Click the button below:</p>
+            <a href="${actionLink}" style="display:inline-block;padding:12px 24px;background:#06b6d4;color:#0f172a;text-decoration:none;font-weight:bold;border-radius:8px;margin:8px 0">Confirm Email</a>
+          </div>
+          <div style="background:#1e293b;border-radius:8px;padding:16px;margin:16px 0">
+            <p style="margin:0 0 8px"><strong>Method 2:</strong> Enter this OTP code in the app:</p>
+            <p style="font-size:32px;letter-spacing:8px;text-align:center;color:#06b6d4;font-weight:bold;margin:8px 0">${otp}</p>
+          </div>
+          <p style="color:#94a3b8;font-size:12px">Code expires in 10 minutes. If you didn't create an account, ignore this email.</p>
         </div>`,
       });
 
-      res.json({ success: true, sent: true });
+      res.json({ success: true, sent: true, otp });
     } catch (err: any) {
       console.error("Send confirmation error:", err);
       res.status(500).json({ error: err.message || 'Failed to send confirmation email' });
+    }
+  });
+
+  // Verify recovery OTP and return reset token
+  app.post("/api/verify-recovery-otp", async (req, res) => {
+    try {
+      const { email, otp } = req.body;
+      if (!email || !otp) return res.status(400).json({ error: 'Email and OTP required' });
+
+      const stored = otpStore.get(`recovery_${email.toLowerCase()}`);
+      if (!stored) return res.status(400).json({ error: 'No OTP found. Request a new one.' });
+      if (Date.now() > stored.expiresAt) {
+        otpStore.delete(`recovery_${email.toLowerCase()}`);
+        return res.status(400).json({ error: 'OTP expired. Request a new one.' });
+      }
+      if (stored.otp !== otp) return res.status(400).json({ error: 'Invalid OTP code.' });
+
+      // Generate a reset token
+      const resetToken = crypto.randomBytes(32).toString('hex');
+      otpStore.set(`reset_${email.toLowerCase()}`, { otp: resetToken, email: email.toLowerCase(), expiresAt: Date.now() + 600000 });
+      otpStore.delete(`recovery_${email.toLowerCase()}`);
+
+      res.json({ success: true, resetToken });
+    } catch (err: any) {
+      console.error("Verify recovery OTP error:", err);
+      res.status(500).json({ error: err.message || 'Failed to verify OTP' });
+    }
+  });
+
+  // Update password with recovery token (from OTP flow)
+  app.post("/api/update-password-with-otp", async (req, res) => {
+    try {
+      const { email, newPassword, resetToken } = req.body;
+      if (!email || !newPassword || !resetToken) return res.status(400).json({ error: 'Email, password, and token required' });
+      if (newPassword.length < 6 || newPassword.length > 16) return res.status(400).json({ error: 'Password must be 6-16 characters' });
+
+      const stored = otpStore.get(`reset_${email.toLowerCase()}`);
+      if (!stored) return res.status(400).json({ error: 'Invalid or expired reset token' });
+      if (stored.otp !== resetToken) return res.status(400).json({ error: 'Invalid reset token' });
+
+      const supabaseUrl = getSupabaseUrl();
+      const serviceRole = getSupabaseServiceRole();
+      if (!supabaseUrl || !serviceRole) return res.status(500).json({ error: 'Server config error' });
+
+      const supabaseAdmin = createClient(supabaseUrl, serviceRole, {
+        auth: { autoRefreshToken: false, persistSession: false }
+      });
+
+      const { data: userList } = await supabaseAdmin.auth.admin.listUsers();
+      const user = userList?.users?.find((u: any) => u.email?.toLowerCase() === email.toLowerCase());
+      if (!user) return res.status(404).json({ error: 'User not found' });
+
+      const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(user.id, { password: newPassword });
+      if (updateError) throw updateError;
+
+      otpStore.delete(`reset_${email.toLowerCase()}`);
+      res.json({ success: true, updated: true });
+    } catch (err: any) {
+      console.error("Update password error:", err);
+      res.status(500).json({ error: err.message || 'Failed to update password' });
+    }
+  });
+
+  // Verify OTP and confirm user (signup)
+  app.post("/api/verify-otp", async (req, res) => {
+    try {
+      const { email, otp } = req.body;
+      if (!email || !otp) return res.status(400).json({ error: 'Email and OTP required' });
+
+      const stored = otpStore.get(email.toLowerCase());
+      if (!stored) return res.status(400).json({ error: 'No OTP found. Request a new one.' });
+      if (Date.now() > stored.expiresAt) {
+        otpStore.delete(email.toLowerCase());
+        return res.status(400).json({ error: 'OTP expired. Request a new one.' });
+      }
+      if (stored.otp !== otp) return res.status(400).json({ error: 'Invalid OTP code.' });
+
+      // Confirm user via admin API
+      const supabaseUrl = getSupabaseUrl();
+      const serviceRole = getSupabaseServiceRole();
+      if (!supabaseUrl || !serviceRole) return res.status(500).json({ error: 'Server config error' });
+
+      const supabaseAdmin = createClient(supabaseUrl, serviceRole, {
+        auth: { autoRefreshToken: false, persistSession: false }
+      });
+
+      // Find user by email
+      const { data: userList } = await supabaseAdmin.auth.admin.listUsers();
+      const user = userList?.users?.find((u: any) => u.email?.toLowerCase() === email.toLowerCase());
+      if (!user) return res.status(404).json({ error: 'User not found' });
+
+      const { error: confirmError } = await supabaseAdmin.auth.admin.updateUserById(user.id, { email_confirm: true });
+      if (confirmError) throw confirmError;
+
+      otpStore.delete(email.toLowerCase());
+      res.json({ success: true, confirmed: true });
+    } catch (err: any) {
+      console.error("Verify OTP error:", err);
+      res.status(500).json({ error: err.message || 'Failed to verify OTP' });
     }
   });
 
@@ -314,7 +430,7 @@ async function startServer() {
     res.redirect(appUrl);
   });
 
-  // Forgot password — send reset link via nodemailer (Gmail SMTP) or fallback to Supabase email
+  // Forgot password — send reset link via nodemailer (Gmail SMTP) with link + OTP
   app.post("/api/forgot-password", async (req, res) => {
     try {
       const { email } = req.body;
@@ -324,41 +440,51 @@ async function startServer() {
       const supabaseUrl = getSupabaseUrl();
       const serviceRole = getSupabaseServiceRole();
 
-      if (supabaseUrl && serviceRole) {
-        const supabaseAdmin = createClient(supabaseUrl, serviceRole, {
-          auth: { autoRefreshToken: false, persistSession: false }
-        });
+      if (!supabaseUrl || !serviceRole) return res.status(500).json({ error: 'Server config error' });
 
-        // Generate recovery link via Supabase Admin API
-        const { data: linkData, error: linkError } = await supabaseAdmin.auth.admin.generateLink({
-          type: 'recovery',
-          email,
-          options: { redirectTo: `${appUrl}/reset-password` },
-        });
+      const supabaseAdmin = createClient(supabaseUrl, serviceRole, {
+        auth: { autoRefreshToken: false, persistSession: false }
+      });
 
-        if (linkError) throw linkError;
+      // Generate recovery link
+      const { data: linkData, error: linkError } = await supabaseAdmin.auth.admin.generateLink({
+        type: 'recovery',
+        email,
+        options: { redirectTo: `${appUrl}/reset-password` },
+      });
+      if (linkError) throw linkError;
 
-        const actionLink = linkData?.properties?.action_link;
+      const actionLink = linkData?.properties?.action_link;
+      if (!actionLink) throw new Error('Failed to generate recovery link');
 
-        if (actionLink) {
-          // Try sending via nodemailer first
-          const sent = await sendRecoveryEmail(email, actionLink);
-          if (sent) {
-            return res.json({ success: true, linkSent: true });
-          }
-        }
-      }
+      // Generate and store OTP (expires in 10 min)
+      const otp = generateOtp();
+      otpStore.set(`recovery_${email.toLowerCase()}`, { otp, email: email.toLowerCase(), expiresAt: Date.now() + 600000 });
 
-      // Fallback: use Supabase built-in email
-      if (supabaseUrl && getSupabaseAnonKey()) {
-        const supabaseClient = createClient(supabaseUrl, getSupabaseAnonKey());
-        const { error } = await supabaseClient.auth.resetPasswordForEmail(email, {
-          redirectTo: `${appUrl}/reset-password`,
-        });
-        if (error) throw error;
-      }
+      // Send via nodemailer
+      const transporter = getTransporter();
+      if (!transporter) throw new Error('Gmail SMTP not configured');
 
-      res.json({ success: true, linkSent: true });
+      await transporter.sendMail({
+        from: `"SPT OFFICIAL" <${process.env.GMAIL_EMAIL}>`,
+        to: email,
+        subject: 'SPT OFFICIAL - Password Reset',
+        html: `<div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:24px;background:#0f172a;color:#e2e8f0;border-radius:12px">
+          <h2 style="color:#06b6d4;margin:0 0 16px">SPT OFFICIAL</h2>
+          <p>Reset your password using one of these methods:</p>
+          <div style="background:#1e293b;border-radius:8px;padding:16px;margin:16px 0">
+            <p style="margin:0 0 8px"><strong>Method 1:</strong> Click the button below:</p>
+            <a href="${actionLink}" style="display:inline-block;padding:12px 24px;background:#06b6d4;color:#0f172a;text-decoration:none;font-weight:bold;border-radius:8px;margin:8px 0">Reset Password</a>
+          </div>
+          <div style="background:#1e293b;border-radius:8px;padding:16px;margin:16px 0">
+            <p style="margin:0 0 8px"><strong>Method 2:</strong> Enter this OTP code in the app:</p>
+            <p style="font-size:32px;letter-spacing:8px;text-align:center;color:#06b6d4;font-weight:bold;margin:8px 0">${otp}</p>
+          </div>
+          <p style="color:#94a3b8;font-size:12px">Code expires in 10 minutes. If you didn't request this, ignore this email.</p>
+        </div>`,
+      });
+
+      res.json({ success: true, linkSent: true, otp });
     } catch (err: any) {
       console.error("Forgot password error:", err);
       res.status(500).json({ error: err.message || 'Failed to send reset link' });

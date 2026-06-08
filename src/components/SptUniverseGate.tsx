@@ -18,6 +18,12 @@ export default function SptUniverseGate({ onClose, onSuccess, language = 'en', r
   const [errorMesssage, setErrorMessage] = useState<string>('');
   const [successMessage, setSuccessMessage] = useState<string>('');
 
+  // OTP states
+  const [showOtpInput, setShowOtpInput] = useState<boolean>(false);
+  const [otpValue, setOtpValue] = useState<string>('');
+  const [otpMode, setOtpMode] = useState<'signup' | 'forgot'>('signup');
+  const [recoveryToken, setRecoveryToken] = useState<string>('');
+
   // Show success message if coming from recovery link
   useEffect(() => {
     if (recoveryMode) {
@@ -176,9 +182,12 @@ export default function SptUniverseGate({ onClose, onSuccess, language = 'en', r
         });
       }
 
+      setOtpMode('signup');
+      setOtpValue('');
+      setShowOtpInput(true);
       setSuccessMessage(gt(
-        '✅ ලියාපදිංචිය සාර්ථකයි! ඔබගේ ඊමේල් ලිපිනයට තහවුරු කිරීමේ සබැඳියක් එවා ඇත. කරුණාකර ඔබගේ Inbox (සහ SPAM) පරීක්ෂා කරන්න.',
-        '✅ Registration successful! A confirmation link has been sent to your email. Please check your inbox (and SPAM folder).'
+        '✅ ලියාපදිංචිය සාර්ථකයි! ඔබගේ ඊමේල් ලිපිනයට තහවුරු කිරීමේ සබැඳියක් සහ OTP කේතයක් එවා ඇත. කරුණාකර ඔබගේ Inbox (සහ SPAM) පරීක්ෂා කරන්න.',
+        '✅ Registration successful! A confirmation link and OTP code have been sent to your email. Please check your inbox (and SPAM folder).'
       ));
     } catch (err: any) {
       setErrorMessage(err.message || gt('ලියාපදිංචි වීමේදී දෝෂයක් මතු විය.', 'Error signing up. Please try again.'));
@@ -208,11 +217,13 @@ export default function SptUniverseGate({ onClose, onSuccess, language = 'en', r
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to send reset link');
 
+      setOtpMode('forgot');
+      setOtpValue('');
+      setShowOtpInput(true);
       setSuccessMessage(gt(
-        '🔐 SPT OFFICIAL: ඔබගේ ඊමේල් ලිපිනයට මුරපදය යළි සැකසීමේ සබැඳියක් එවා ඇත. කරුණාකර ඔබගේ Inbox පරීක්ෂා කරන්න (SPAM බලන්න). සබැඳිය ක්ලික් කළ පසු නව මුරපදයක් ඇතුළත් කළ හැක.',
-        '🔐 SPT OFFICIAL: A password reset link has been sent to your email. Please check your inbox (and SPAM folder). Click the link to set a new password.'
+        '🔐 SPT OFFICIAL: ඔබගේ ඊමේල් ලිපිනයට මුරපදය යළි සැකසීමේ සබැඳියක් සහ OTP කේතයක් එවා ඇත. කරුණාකර ඔබගේ Inbox (සහ SPAM) පරීක්ෂා කරන්න.',
+        '🔐 SPT OFFICIAL: A password reset link and OTP code have been sent to your email. Please check your inbox (and SPAM folder).'
       ));
-      setTimeout(() => handleViewChange('login'), 4000);
     } catch (err: any) {
       setErrorMessage(err.message || gt('ඊමේල් එක යැවීමේදී දෝෂයක් මතු විය.', 'Error sending recovery transmission.'));
     } finally {
@@ -247,8 +258,21 @@ export default function SptUniverseGate({ onClose, onSuccess, language = 'en', r
 
     setIsLoading(true);
     try {
-      const { error } = await supabase.auth.updateUser({ password: newPassword });
-      if (error) throw error;
+      if (recoveryToken) {
+        // OTP-based recovery
+        const res = await fetch('/api/update-password-with-otp', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, newPassword, resetToken: recoveryToken }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed to update password');
+        setRecoveryToken('');
+      } else {
+        // Default Supabase recovery (from email link)
+        const { error } = await supabase.auth.updateUser({ password: newPassword });
+        if (error) throw error;
+      }
 
       setSuccessMessage(gt(
         '✅ සුභ පැතුම්! ඔබගේ SPT OFFICIAL ගිණුමේ මුරපදය සාර්ථකව යාවත්කාලීන කරන ලදී!',
@@ -263,6 +287,70 @@ export default function SptUniverseGate({ onClose, onSuccess, language = 'en', r
       }, 1500);
     } catch (err: any) {
       setErrorMessage(err.message || gt('මුරපදය රීසෙට් කිරීමේදී දෝෂයක් සිදු විය.', 'Unable to rewrite credential layers in local directory.'));
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // 6. OTP Verification Handler
+  const handleOtpSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorMessage('');
+    setSuccessMessage('');
+    if (!otpValue || otpValue.length !== 6) {
+      setErrorMessage(gt('කරුණාකර 6-ඉලක්කම් OTP කේතය ඇතුළත් කරන්න.', 'Please enter the 6-digit OTP code.'));
+      return;
+    }
+    setIsLoading(true);
+    try {
+      const endpoint = otpMode === 'signup' ? '/api/verify-otp' : '/api/verify-recovery-otp';
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, otp: otpValue }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'OTP verification failed');
+
+      if (otpMode === 'signup') {
+        // Auto-login after signup confirmation
+        setSuccessMessage(gt('✅ ගිණුම තහවුරු කරන ලදී! ස්වයංක්‍රීයව පිවිසෙමින්...', '✅ Account confirmed! Auto-logging in...'));
+        const { data: pwData } = await supabase.auth.getSession();
+        if (!pwData.session) {
+          setView('login');
+        } else if (onSuccess) {
+          onSuccess({ email: pwData.session.user.email || email });
+        }
+      } else {
+        // Forgot password — store reset token and show reset form
+        setRecoveryToken(data.resetToken || '');
+        setSuccessMessage(gt('✅ OTP තහවුරු කරන ලදී! කරුණාකර නව මුරපදයක් ඇතුළත් කරන්න.', '✅ OTP verified! Please enter a new password.'));
+        setShowOtpInput(false);
+        setView('reset_password');
+      }
+    } catch (err: any) {
+      setErrorMessage(err.message || gt('OTP තහවුරු කිරීමේදී දෝෂයක් මතු විය.', 'Error verifying OTP.'));
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // 7. Resend OTP
+  const handleResendOtp = async () => {
+    setErrorMessage('');
+    setSuccessMessage('');
+    setIsLoading(true);
+    try {
+      const endpoint = otpMode === 'signup' ? '/api/send-confirmation' : '/api/forgot-password';
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      });
+      if (!res.ok) throw new Error(gt('නැවත යැවීමට අපොහොසත් විය.', 'Failed to resend.'));
+      setSuccessMessage(gt('✅ OTP කේතය නැවත එවා ඇත!', '✅ OTP code resent!'));
+    } catch (err: any) {
+      setErrorMessage(err.message || gt('නැවත යැවීමේදී දෝෂයක්.', 'Error resending.'));
     } finally {
       setIsLoading(false);
     }
@@ -453,7 +541,7 @@ export default function SptUniverseGate({ onClose, onSuccess, language = 'en', r
             )}
 
             {/* 2. SIGN UP VIEW */}
-            {view === 'signup' && (
+            {view === 'signup' && !showOtpInput && (
               <motion.div
                 key="signup-view"
                 initial={{ opacity: 0, x: -12 }}
@@ -601,8 +689,76 @@ export default function SptUniverseGate({ onClose, onSuccess, language = 'en', r
             )}
 
             {/* 3. OTP VERIFICATION VIEW */}
+            {showOtpInput && (
+              <motion.div
+                key="otp-view"
+                initial={{ opacity: 0, x: -12 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: 12 }}
+                transition={{ duration: 0.25 }}
+              >
+                <div className="mb-5">
+                  <h2 className="text-xl font-bold font-sans tracking-tight text-white flex items-center gap-2">
+                    <Key className="w-5 h-5 text-cyan-400" />
+                    {gt('OTP කේතය ඇතුළත් කරන්න', 'Enter OTP Code')}
+                  </h2>
+                  <p className="text-xs text-slate-300 mt-1">
+                    {gt('ඔබගේ ඊමේල් ලිපිනයට එවන ලද 6-ඉලක්කම් කේතය ඇතුළත් කරන්න. එසේත් නැත්නම් ඊමේල් එකේ ඇති සබැඳිය ක්ලික් කරන්න.', 'Enter the 6-digit code sent to your email. Or click the confirmation link in the email.')}
+                  </p>
+                </div>
+
+                <form onSubmit={handleOtpSubmit} className="space-y-4">
+                  <div>
+                    <label className="block text-[10px] font-mono text-slate-400 uppercase mb-1 tracking-wider">
+                      {gt('OTP කේතය', 'OTP CODE')}
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={otpValue}
+                      onChange={e => setOtpValue(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                      placeholder="000000"
+                      maxLength={6}
+                      className="w-full px-3.5 py-3 text-lg text-center tracking-[8px] bg-white/[0.04] border border-white/10 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500/50 focus:ring-1 focus:ring-cyan-500/20 transition-all font-mono"
+                    />
+                    <p className="mt-1 text-[9px] font-mono text-slate-500 text-center">
+                      {gt('ඊමේල් එකේ ඇති කේතය ඇතුළත් කරන්න', 'Enter the code from your email')}
+                    </p>
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={isLoading}
+                    className="w-full py-3 bg-gradient-to-r from-cyan-500 to-sky-500 hover:from-cyan-400 hover:to-sky-400 text-neutral-950 font-bold text-xs font-mono uppercase tracking-widest rounded-xl transition-all duration-300 shadow-[0_4px_20px_rgba(6,182,212,0.25)] flex items-center justify-center gap-2 cursor-pointer mt-2"
+                  >
+                    {isLoading ? (
+                      <div className="w-4 h-4 border-2 border-neutral-950 border-t-transparent rounded-full animate-spin"></div>
+                    ) : (
+                      <>{gt('තහවුරු කරන්න', 'VERIFY & CONFIRM')} <ArrowRight className="w-4 h-4" /></>
+                    )}
+                  </button>
+                </form>
+
+                <div className="mt-4 text-center space-y-2">
+                  <button
+                    onClick={handleResendOtp}
+                    disabled={isLoading}
+                    className="text-[10px] font-mono text-cyan-400 hover:text-cyan-300 cursor-pointer mx-auto block"
+                  >
+                    {gt('OTP කේතය නැවත එවන්න', 'Resend OTP Code')}
+                  </button>
+                  <button
+                    onClick={() => { setShowOtpInput(false); setOtpValue(''); handleViewChange(otpMode === 'signup' ? 'signup' : 'forgot'); }}
+                    className="text-[10px] font-mono text-slate-400 hover:text-white flex items-center justify-center gap-1 mx-auto cursor-pointer"
+                  >
+                    <ChevronLeft className="w-3.5 h-3.5" /> {gt('ආපසු', 'Go Back')}
+                  </button>
+                </div>
+              </motion.div>
+            )}
+
             {/* 4. FORGOT PASSWORD VIEW */}
-            {view === 'forgot' && (
+            {view === 'forgot' && !showOtpInput && (
               <motion.div
                 key="forgot-view"
                 initial={{ opacity: 0, x: -12 }}
