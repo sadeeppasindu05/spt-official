@@ -124,6 +124,15 @@ export default function App() {
   const [utcTime, setUtcTime] = useState<string>('');
   // Live online visitor count
   const [liveOnlineCount, setLiveOnlineCount] = useState<number>(0);
+  // Persistent marketing counters (start at base, increment on each new signup/subscription)
+  const [displayRegisteredCount, setDisplayRegisteredCount] = useState<number>(() => {
+    const v = localStorage.getItem('spt_display_registered');
+    return v ? parseInt(v, 10) : 592;
+  });
+  const [displaySubscribedCount, setDisplaySubscribedCount] = useState<number>(() => {
+    const v = localStorage.getItem('spt_display_subscribed');
+    return v ? parseInt(v, 10) : 370;
+  });
   
   // Real-time Database/Platform Status state
   const [platformStatus, setPlatformStatus] = useState<'online' | 'local mode' | 'checking' | 'error'>('checking');
@@ -1442,6 +1451,13 @@ export default function App() {
     localStorage.setItem('spt_payment_gateways', JSON.stringify(paymentGatewaysList));
   }, [paymentGatewaysList]);
 
+  React.useEffect(() => {
+    localStorage.setItem('spt_display_registered', String(displayRegisteredCount));
+  }, [displayRegisteredCount]);
+  React.useEffect(() => {
+    localStorage.setItem('spt_display_subscribed', String(displaySubscribedCount));
+  }, [displaySubscribedCount]);
+
   // Subscription Payment flow states
   const [showLkrPrices, setShowLkrPrices] = useState(false);
   const [selectedPlanForPayment, setSelectedPlanForPayment] = useState<'weekly' | 'monthly' | '6months' | 'yearly' | 'lifetime' | null>(null);
@@ -1500,6 +1516,7 @@ export default function App() {
       }
       
       const userEmail = customerSession.email;
+      setDisplaySubscribedCount(prev => prev + 1);
       setSptUsersList((prev: SptUser[]) => {
         const exists = prev.some(u => u.email.toLowerCase() === userEmail.toLowerCase());
         const expDate = new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString();
@@ -2368,19 +2385,19 @@ export default function App() {
           </div>
         </nav>
 
-        {/* Stats bar: marketing base + real-time increments */}
+        {/* Stats bar: persistent marketing counters + real-time online */}
         <div className="flex flex-wrap items-center justify-center gap-2 px-2">
           <div className="flex items-center gap-3 px-3 py-1.5 rounded-xl bg-white/5 border border-white/10 text-[10px] font-mono">
             <div className="flex items-center gap-1.5 text-slate-300">
               <User className="w-3 h-3 text-cyan-400" />
               <span>{t('ලියාපදිංචි', 'Registered')}:</span>
-              <span className="text-cyan-300 font-bold">{592 - 17 + sptUsersList.length}</span>
+              <span className="text-cyan-300 font-bold">{displayRegisteredCount}</span>
             </div>
             <span className="text-slate-600">|</span>
             <div className="flex items-center gap-1.5 text-slate-300">
               <CheckCircle className="w-3 h-3 text-emerald-400" />
               <span>{t('සාමාජික', 'Subscribed')}:</span>
-              <span className="text-emerald-300 font-bold">{370 - 17 + sptUsersList.filter(u => u.subscriptionStatus === 'active' || u.subscriptionStatus === 'trial').length}</span>
+              <span className="text-emerald-300 font-bold">{displaySubscribedCount}</span>
             </div>
             <span className="text-slate-600">|</span>
             <div className="flex items-center gap-1.5 text-slate-300">
@@ -3352,6 +3369,7 @@ export default function App() {
                             return;
                           }
                           
+                          setDisplaySubscribedCount(prev => prev + 1);
                           // update user
                           setSptUsersList(prev => {
                             const exists = prev.some(u => u.email.toLowerCase() === customerSession.email.toLowerCase());
@@ -4253,6 +4271,9 @@ export default function App() {
                     }
                   }
 
+                  // Increment display counters for marketing
+                  setDisplayRegisteredCount(prev => prev + 1);
+                  setDisplaySubscribedCount(prev => prev + 1);
                   // Ensure user is registered in the subscription base
                   setSptUsersList(prev => {
                     const exists = prev.some(u => u.email.toLowerCase() === resolvedEmail);
@@ -4550,6 +4571,7 @@ export default function App() {
                     
                     if (customerSession?.email) {
                       const emailLower = customerSession.email.toLowerCase().trim();
+                      setDisplaySubscribedCount(prev => prev + 1);
                       setSptUsersList(prev => {
                         const exists = prev.some(u => u.email.toLowerCase() === emailLower);
                         if (exists) {
