@@ -122,6 +122,8 @@ export default function App() {
 
   // Live UTC Clock state
   const [utcTime, setUtcTime] = useState<string>('');
+  // Live online visitor count
+  const [liveOnlineCount, setLiveOnlineCount] = useState<number>(0);
   
   // Real-time Database/Platform Status state
   const [platformStatus, setPlatformStatus] = useState<'online' | 'local mode' | 'checking' | 'error'>('checking');
@@ -141,6 +143,23 @@ export default function App() {
     updateTime();
     const timer = setInterval(updateTime, 1000);
     return () => clearInterval(timer);
+  }, []);
+
+  // Live online visitor count (heartbeat + polling)
+  React.useEffect(() => {
+    const ping = async () => {
+      try {
+        await fetch('/api/online/heartbeat', { method: 'POST' }).catch(() => {});
+        const res = await fetch('/api/online/count').catch(() => null);
+        if (res && res.ok) {
+          const data = await res.json();
+          setLiveOnlineCount(data.count || 0);
+        }
+      } catch {}
+    };
+    ping();
+    const interval = setInterval(ping, 30000);
+    return () => clearInterval(interval);
   }, []);
 
   // Periodic real-time DB status check
@@ -2348,11 +2367,32 @@ export default function App() {
             )}
           </div>
         </nav>
-        {customerSession && (
-          <div className="flex justify-center md:justify-end px-2">
-            <ActivePlanCountdown email={customerSession.email} sptUsersList={sptUsersList} />
+
+        {/* Stats bar: real-time Registered / Subscribed / Online counts */}
+        <div className="flex flex-wrap items-center justify-center gap-2 px-2">
+          <div className="flex items-center gap-3 px-3 py-1.5 rounded-xl bg-white/5 border border-white/10 text-[10px] font-mono">
+            <div className="flex items-center gap-1.5 text-slate-300">
+              <User className="w-3 h-3 text-cyan-400" />
+              <span>{t('ලියාපදිංචි', 'Registered')}:</span>
+              <span className="text-cyan-300 font-bold">{sptUsersList.length}</span>
+            </div>
+            <span className="text-slate-600">|</span>
+            <div className="flex items-center gap-1.5 text-slate-300">
+              <CheckCircle className="w-3 h-3 text-emerald-400" />
+              <span>{t('සාමාජික', 'Subscribed')}:</span>
+              <span className="text-emerald-300 font-bold">{sptUsersList.filter(u => u.subscriptionStatus === 'active' || u.subscriptionStatus === 'trial').length}</span>
+            </div>
+            <span className="text-slate-600">|</span>
+            <div className="flex items-center gap-1.5 text-slate-300">
+              <Activity className="w-3 h-3 text-amber-400" />
+              <span>{t('මාර්ගගත', 'Online')}:</span>
+              <span className="text-amber-300 font-bold">{liveOnlineCount}</span>
+            </div>
           </div>
-        )}
+          {customerSession && (
+            <ActivePlanCountdown email={customerSession.email} sptUsersList={sptUsersList} />
+          )}
+        </div>
       </header>
 
       {/* 2. Main Page Content Orchestration with framer-motion transitions */}

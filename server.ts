@@ -105,6 +105,19 @@ setInterval(() => {
   }
 }, 300000);
 
+// Online visitor tracking (IP-based, expires after 5 min)
+const onlineVisitors: Map<string, number> = new Map();
+setInterval(() => {
+  const fiveMinAgo = Date.now() - 5 * 60 * 1000;
+  for (const [ip, lastSeen] of onlineVisitors) {
+    if (lastSeen < fiveMinAgo) onlineVisitors.delete(ip);
+  }
+}, 60000);
+
+function getClientIp(req: express.Request): string {
+  return req.headers['x-forwarded-for']?.toString().split(',')[0]?.trim() || req.socket.remoteAddress || 'unknown';
+}
+
 // Rate limit middleware factory
 function rateLimitMiddleware(maxRequests: number, windowMs: number) {
   return (req: express.Request, res: express.Response, next: express.NextFunction) => {
@@ -921,6 +934,20 @@ async function startServer() {
   if (fs.existsSync(uploadsPath)) {
     app.use('/uploads', express.static(uploadsPath));
   }
+
+  // Online visitor heartbeat + count
+  app.get("/api/online/count", (req, res) => {
+    const ip = getClientIp(req);
+    onlineVisitors.set(ip, Date.now());
+    const count = onlineVisitors.size;
+    res.json({ count, online: count });
+  });
+
+  app.post("/api/online/heartbeat", (req, res) => {
+    const ip = getClientIp(req);
+    onlineVisitors.set(ip, Date.now());
+    res.json({ success: true });
+  });
 
   // System health check
   app.get("/api/system/health", async (req, res) => {
