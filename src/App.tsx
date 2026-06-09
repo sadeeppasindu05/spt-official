@@ -529,6 +529,17 @@ export default function App() {
           console.log("System config table failed to load or does not exist yet.", configFetchErr);
         }
 
+        // Load marketing counters from Supabase
+        try {
+          const { data: counters } = await supabase.from('marketing_counters').select('*').eq('id', 'global').maybeSingle();
+          if (counters) {
+            if (counters.registered_count != null) setDisplayRegisteredCount(counters.registered_count);
+            if (counters.subscribed_count != null) setDisplaySubscribedCount(counters.subscribed_count);
+          }
+        } catch (countersErr) {
+          console.log("Failed to load marketing counters:", countersErr);
+        }
+
       } catch (err) {
         console.error("Failed to load live data from Supabase:", err);
       }
@@ -597,11 +608,159 @@ export default function App() {
       }
     });
 
+    // Subscribe to realtime changes on all content tables
+    const contentTables = ['services','tools','brands','offers','reviews','blogs','homestats','aboutcards','gateways','contacts','plans','system_config','support_messages','telemetry'] as const;
+    const realtimeChannel = supabase
+      .channel('all-tables-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'services' }, () => refetchTable('services'))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'tools' }, () => refetchTable('tools'))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'brands' }, () => refetchTable('brands'))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'offers' }, () => refetchTable('offers'))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'reviews' }, () => refetchTable('reviews'))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'blogs' }, () => refetchTable('blogs'))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'homestats' }, () => refetchTable('homestats'))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'aboutcards' }, () => refetchTable('aboutcards'))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'gateways' }, () => refetchTable('gateways'))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'contacts' }, () => refetchTable('contacts'))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'plans' }, () => refetchTable('plans'))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'system_config' }, () => refetchTable('system_config'))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'support_messages' }, () => refetchTable('support_messages'))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'telemetry' }, () => refetchTable('telemetry'))
+      .subscribe();
+
     return () => {
       subscription?.unsubscribe();
+      supabase.removeChannel(realtimeChannel);
     };
   }, []);
 
+  // Re-fetch a table from Supabase and update the corresponding state
+  const refetchTable = React.useCallback(async (table: string) => {
+    try {
+      switch (table) {
+        case 'services': {
+          const { data } = await supabase.from('services').select('*').order('created_at', { ascending: false });
+          if (data) setServicesList(data.map((item: any) => ({
+            id: item.id, title: item.title, titleEn: item.title_en,
+            description: item.description, descriptionEn: item.description_en,
+            category: item.category, highlight: item.highlight,
+            imageUrl: item.image_url, showcaseFiles: item.showcase_files || []
+          })));
+          break;
+        }
+        case 'tools': {
+          const { data } = await supabase.from('tools').select('*').order('created_at', { ascending: true });
+          if (data) setToolsList(data.map((item: any) => ({
+            id: item.id, name: item.name, nameEn: item.name_en,
+            description: item.description, descriptionEn: item.description_en,
+            icon: item.icon, category: item.category, imageUrl: item.image_url
+          })));
+          break;
+        }
+        case 'brands': {
+          const { data } = await supabase.from('brands').select('*').order('created_at', { ascending: true });
+          if (data) setBrandsList(data.map((item: any) => ({
+            id: item.id, name: item.name, nameEn: item.name_en,
+            subtitle: item.subtitle, subtitleEn: item.subtitle_en,
+            description: item.description, descriptionEn: item.description_en,
+            visualUrl: item.visual_url
+          })));
+          break;
+        }
+        case 'offers': {
+          const { data } = await supabase.from('offers').select('*').order('created_at', { ascending: false });
+          if (data) setOffersList(data.map((item: any) => ({
+            id: item.id, title: item.title, titleEn: item.title_en,
+            description: item.description, descriptionEn: item.description_en,
+            discountBadge: item.discount_badge, discountBadgeEn: item.discount_badge_en,
+            validUntil: item.valid_until, promoCode: item.promo_code, imageUrl: item.image_url
+          })));
+          break;
+        }
+        case 'reviews': {
+          const { data } = await supabase.from('reviews').select('*').order('created_at', { ascending: false });
+          if (data) setReviewsList(data.map((item: any) => ({
+            id: item.id, userName: item.user_name, rating: item.rating,
+            comment: item.comment, commentEn: item.comment_en, userAvatar: item.user_avatar
+          })));
+          break;
+        }
+        case 'blogs': {
+          const { data } = await supabase.from('blogs').select('*').order('created_at', { ascending: false });
+          if (data) setBlogsList(data.map((item: any) => ({
+            id: item.id, title: item.title, excerpt: item.excerpt,
+            author: item.author, date: item.date, imageUrl: item.image_url, content: item.content
+          })));
+          break;
+        }
+        case 'homestats': {
+          const { data } = await supabase.from('homestats').select('*').order('created_at', { ascending: true });
+          if (data) setHomeStatsList(data.map((item: any) => ({
+            id: item.id, icon: item.icon, label: item.label,
+            labelEn: item.label_en, value: item.value
+          })));
+          break;
+        }
+        case 'aboutcards': {
+          const { data } = await supabase.from('aboutcards').select('*').order('created_at', { ascending: true });
+          if (data) setAboutCardsList(data.map((item: any) => ({
+            id: item.id, icon: item.icon, title: item.title,
+            titleEn: item.title_en, description: item.description, descriptionEn: item.description_en
+          })));
+          break;
+        }
+        case 'gateways': {
+          const { data } = await supabase.from('gateways').select('*').order('created_at', { ascending: true });
+          if (data) setPaymentGatewaysList(data);
+          break;
+        }
+        case 'contacts': {
+          const { data } = await supabase.from('contacts').select('*').order('created_at', { ascending: true });
+          if (data) setContactsList(data.map((item: any) => ({
+            id: item.id, label: item.label, labelEn: item.label_en,
+            value: item.value, icon: item.icon, link: item.link
+          })));
+          break;
+        }
+        case 'plans': {
+          const { data } = await supabase.from('plans').select('*').order('created_at', { ascending: true });
+          if (data) setSubscriptionPlans(data.map((item: any) => ({
+            id: item.id, title: item.title, priceUsd: item.price_usd,
+            originalPriceUsd: item.original_price_usd, discountTag: item.discount_tag,
+            durationLabel: item.duration_label, isPopular: item.is_popular, isFree: item.is_free
+          })));
+          break;
+        }
+        case 'system_config': {
+          const { data } = await supabase.from('system_config').select('*');
+          if (data) {
+            setSystemConfigMap(Object.fromEntries(data.map((item: any) => [item.key, item.value])));
+          }
+          break;
+        }
+        case 'support_messages': {
+          const { data } = await supabase.from('support_messages').select('*').order('created_at', { ascending: false });
+          if (data) setSupportMessagesList(data.map((item: any) => ({
+            id: item.id, email: item.email, name: item.name,
+            message: item.message, status: item.status,
+            createdAt: item.created_at
+          })));
+          break;
+        }
+        case 'telemetry': {
+          const { data } = await supabase.from('telemetry').select('*').order('created_at', { ascending: false });
+          if (data) setTelemetryList(data.map((item: any) => ({
+            id: item.id, type: item.type, path: item.path,
+            elementName: item.element_name, timestamp: item.timestamp,
+            sessionToken: item.session_token, ipLocation: item.ip_location
+          })));
+          break;
+        }
+      }
+    } catch (err) {
+      console.error(`Error refetching ${table}:`, err);
+    }
+  }, []);
 
   // 1. Services wrappers
   const handleAddNewService = async (newS: ServiceItem) => {
@@ -1266,11 +1425,24 @@ export default function App() {
       localStorage.setItem('spt_telemetry', JSON.stringify(updated));
       return updated;
     });
+
+    const isSupabaseReady = import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_ANON_KEY;
+    if (isSupabaseReady) {
+      supabase.from('telemetry').insert([{
+        id: newEvent.id, type: newEvent.type, path: newEvent.path,
+        element_name: newEvent.elementName, timestamp: newEvent.timestamp,
+        session_token: newEvent.sessionToken, ip_location: newEvent.ipLocation
+      }]).then(({ error }) => { if (error) console.error('Telemetry insert error:', error); });
+    }
   };
 
   const clearTelemetry = () => {
     setTelemetryList([]);
     localStorage.removeItem('spt_telemetry');
+    const isSupabaseReady = import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_ANON_KEY;
+    if (isSupabaseReady) {
+      supabase.from('telemetry').delete().neq('id', 'none').then(({ error }) => { if (error) console.error('Telemetry delete error:', error); });
+    }
   };
 
   // Dynamic lists capable of being updated by Admin with localStorage persistence
@@ -1324,6 +1496,15 @@ export default function App() {
   React.useEffect(() => {
     localStorage.setItem('spt_subscription_plans', JSON.stringify(subscriptionPlans));
   }, [subscriptionPlans]);
+
+  const [supportMessagesList, setSupportMessagesList] = useState<any[]>(() => {
+    const cached = localStorage.getItem('spt_support_messages');
+    return cached ? JSON.parse(cached) : [];
+  });
+  const [systemConfigMap, setSystemConfigMap] = useState<Record<string,string>>(() => {
+    const cached = localStorage.getItem('spt_system_config');
+    return cached ? JSON.parse(cached) : {};
+  });
 
   const [offersList, setOffersList] = useState<OfferItem[]>(() => {
     const cached = localStorage.getItem('spt_offers');
@@ -1533,9 +1714,17 @@ export default function App() {
 
   React.useEffect(() => {
     localStorage.setItem('spt_display_registered', String(displayRegisteredCount));
+    const isSupabaseReady = import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_ANON_KEY;
+    if (isSupabaseReady) {
+      supabase.from('marketing_counters').upsert({ id: 'global', registered_count: displayRegisteredCount, updated_at: new Date().toISOString() }, { onConflict: 'id' }).then(({ error }) => { if (error) console.error('Counter sync error:', error); });
+    }
   }, [displayRegisteredCount]);
   React.useEffect(() => {
     localStorage.setItem('spt_display_subscribed', String(displaySubscribedCount));
+    const isSupabaseReady = import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_ANON_KEY;
+    if (isSupabaseReady) {
+      supabase.from('marketing_counters').upsert({ id: 'global', subscribed_count: displaySubscribedCount, updated_at: new Date().toISOString() }, { onConflict: 'id' }).then(({ error }) => { if (error) console.error('Counter sync error:', error); });
+    }
   }, [displaySubscribedCount]);
 
   // Subscription Payment flow states

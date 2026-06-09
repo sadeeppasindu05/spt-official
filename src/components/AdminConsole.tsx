@@ -504,23 +504,27 @@ export default function AdminConsole({
     }
   };
 
-  const handleToggleTicketStatus = (ticketId: string) => {
-    const updated = supportTickets.map(t => {
-      if (t.id === ticketId) {
-        return { ...t, status: t.status === 'resolved' ? 'pending' : 'resolved' };
-      }
-      return t;
-    });
+  const handleToggleTicketStatus = async (ticketId: string) => {
+    const ticket = supportTickets.find(t => t.id === ticketId);
+    if (!ticket) return;
+    const newStatus = ticket.status === 'resolved' ? 'pending' : 'resolved';
+    const updated = supportTickets.map(t => t.id === ticketId ? { ...t, status: newStatus } : t);
     setSupportTickets(updated);
     localStorage.setItem('spt_support_messages', JSON.stringify(updated));
-    syncSupportToSupabase(updated);
+    const isSupabaseReady = import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_ANON_KEY;
+    if (isSupabaseReady) {
+      try { await supabase.from('support_messages').update({ status: newStatus }).eq('id', ticketId); } catch (err) { console.error('Failed to toggle ticket:', err); }
+    }
   };
 
-  const handleDeleteTicket = (ticketId: string) => {
+  const handleDeleteTicket = async (ticketId: string) => {
     const updated = supportTickets.filter(t => t.id !== ticketId);
     setSupportTickets(updated);
     localStorage.setItem('spt_support_messages', JSON.stringify(updated));
-    syncSupportToSupabase(updated);
+    const isSupabaseReady = import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_ANON_KEY;
+    if (isSupabaseReady) {
+      try { await supabase.from('support_messages').delete().eq('id', ticketId); } catch (err) { console.error('Failed to delete ticket:', err); }
+    }
   };
 
   React.useEffect(() => {
