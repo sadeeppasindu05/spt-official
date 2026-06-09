@@ -1766,8 +1766,24 @@ export default function App() {
     const isTrial = st === 'trial';
     if (!isTrial && st !== 'active') return '';
     if (sp === 'lifetime') return 'LIFETIME PACK ACTIVE';
-    if (!se) return '';
-    const diff = new Date(se).getTime() - Date.now();
+    if (!se) {
+      if (isTrial && u.registeredAt) {
+        const fallbackExp = new Date(u.registeredAt).getTime() + 7 * 24 * 3600 * 1000;
+        const fallbackDiff = fallbackExp - Date.now();
+        if (fallbackDiff > 0) {
+          const d2 = Math.floor(fallbackDiff / 86400000);
+          const hr2 = Math.floor((fallbackDiff % 86400000) / 3600000);
+          const mi2 = Math.floor((fallbackDiff % 3600000) / 60000);
+          const sec2 = Math.floor((fallbackDiff % 60000) / 1000);
+          const fmt2 = d2 > 0 ? `${d2}D ${hr2}H ${mi2}M` : (hr2 > 0 ? `${hr2}H ${mi2}M ${sec2}S` : `${mi2}M ${sec2}S`);
+          return `FREE TRIAL ACTIVE | ${fmt2}`;
+        }
+      }
+      return '';
+    }
+    const rawDiff = new Date(se).getTime();
+    if (isNaN(rawDiff)) return '';
+    const diff = rawDiff - Date.now();
     if (diff <= 0) return 'Expired';
     const d = Math.floor(diff / 86400000);
     const hr = Math.floor((diff % 86400000) / 3600000);
@@ -2969,75 +2985,84 @@ export default function App() {
                     return true;
                   })
                   .map((plan: any) => (
-                  <div 
-                    key={plan.id}
-                    onClick={() => handleSelectPlanAction(plan)}
-                    className={`glass-panel p-6 rounded-3xl flex flex-col items-center justify-between space-y-6 transition-all duration-500 text-center relative overflow-hidden group hover:-translate-y-4 hover:scale-105 ${
-                      selectedPlanIdInPlans === plan.id 
-                        ? 'border-[#00f0ff] bg-cyan-950/25 shadow-[0_0_25px_rgba(0,240,255,0.25)]'
-                        : 'border-white/10 hover:border-cyan-400/50 hover:shadow-[0_20px_50px_-10px_rgba(34,211,238,0.4)]'
-                    } shadow-[0_10px_30px_-15px_rgba(0,0,0,0.8)] cursor-pointer transform-gpu bg-gradient-to-b from-slate-800/80 to-[#0a0a16]`}
-                  >
-                    <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-cyan-400/10 to-transparent blur-2xl pointer-events-none group-hover:from-cyan-400/20 transition-all duration-500" />
-                    
-                    <div className="space-y-4 relative z-10 w-full text-center">
-                      <div className="relative">
-                        <h3 className="text-[12px] font-mono font-black uppercase text-cyan-400 tracking-widest drop-shadow-sm group-hover:text-cyan-300 transition-colors">
-                          {plan.title.replace(' PACK', '')} {t('පැකේජය', 'PACK')}
-                        </h3>
-                        {plan.discountTag && (
-                          <div className="absolute -top-3 -right-2 bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-2.5 py-0.5 rounded-full text-[9px] font-bold tracking-widest shadow-[0_0_10px_rgba(16,185,129,0.2)] animate-pulse">
-                            {plan.discountTag ? t(plan.discountTag, plan.discountTagEn || plan.discountTag) : null}
-                          </div>
-                        )}
-                      </div>
-                      <div className="relative inline-block w-full text-center py-4">
-                        {(() => {
-                          const cu = customerSession ? sptUsersList.find(u => u.email.toLowerCase() === customerSession.email.toLowerCase()) : null;
-                          const isTrial = cu && (cu.subscriptionStatus === 'trial' || cu.subscriptionStatus === 'active') && plan.priceUsd === 0;
-                          const isPaid = cu && cu.subscriptionStatus === 'active' && cu.subscriptionPlan && plan.title.toLowerCase().includes(cu.subscriptionPlan);
-                          return (isTrial || isPaid) ? (
-                            <div className="absolute -top-1 left-1/2 -translate-x-1/2 bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-3 py-0.5 rounded-full text-[9px] font-bold tracking-widest shadow-[0_0_10px_rgba(16,185,129,0.2)] z-20 whitespace-nowrap">
-                              {t('ඔබේ වත්මන් පැකේජය', 'YOUR CURRENT PLAN')}
+                  <div key={plan.id} className="relative pt-6">
+                    {(() => {
+                      const cu = customerSession ? sptUsersList.find(u => u.email.toLowerCase() === customerSession.email.toLowerCase()) : null;
+                      let isCurrentPlan = false;
+                      if (cu && (cu.subscriptionStatus === 'trial' || cu.subscriptionStatus === 'active')) {
+                        const hasRealPlan = cu.subscriptionPlan && cu.subscriptionPlan !== 'trial';
+                        if (hasRealPlan) {
+                          const planCodeMap: Record<string, string> = { weekly: 'plan_1', monthly: 'plan_2', '6months': 'plan_3', yearly: 'plan_4', lifetime: 'plan_5' };
+                          isCurrentPlan = plan.id === planCodeMap[cu.subscriptionPlan!];
+                        } else {
+                          isCurrentPlan = plan.priceUsd === 0;
+                        }
+                      }
+                      return isCurrentPlan ? (
+                        <div className="absolute -top-0 left-1/2 -translate-x-1/2 bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-3 py-0.5 rounded-full text-[9px] font-bold tracking-widest shadow-[0_0_10px_rgba(16,185,129,0.2)] z-30 whitespace-nowrap">
+                          {t('ඔබේ වත්මන් පැකේජය', 'YOUR CURRENT PLAN')}
+                        </div>
+                      ) : null;
+                    })()}
+                    <div 
+                      onClick={() => handleSelectPlanAction(plan)}
+                      className={`glass-panel p-6 rounded-3xl flex flex-col items-center justify-between space-y-6 transition-all duration-500 text-center relative group hover:-translate-y-4 hover:scale-105 ${
+                        selectedPlanIdInPlans === plan.id 
+                          ? 'border-[#00f0ff] bg-cyan-950/25 shadow-[0_0_25px_rgba(0,240,255,0.25)]'
+                          : 'border-white/10 hover:border-cyan-400/50 hover:shadow-[0_20px_50px_-10px_rgba(34,211,238,0.4)]'
+                      } shadow-[0_10px_30px_-15px_rgba(0,0,0,0.8)] cursor-pointer transform-gpu bg-gradient-to-b from-slate-800/80 to-[#0a0a16]`}
+                    >
+                      <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-cyan-400/10 to-transparent blur-2xl pointer-events-none group-hover:from-cyan-400/20 transition-all duration-500" />
+                      
+                      <div className="space-y-4 relative z-10 w-full text-center">
+                        <div className="relative">
+                          <h3 className="text-[12px] font-mono font-black uppercase text-cyan-400 tracking-widest drop-shadow-sm group-hover:text-cyan-300 transition-colors">
+                            {plan.title.replace(' PACK', '')} {t('පැකේජය', 'PACK')}
+                          </h3>
+                          {plan.discountTag && (
+                            <div className="absolute -top-3 -right-2 bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-2.5 py-0.5 rounded-full text-[9px] font-bold tracking-widest shadow-[0_0_10px_rgba(16,185,129,0.2)] animate-pulse">
+                              {plan.discountTag ? t(plan.discountTag, plan.discountTagEn || plan.discountTag) : null}
                             </div>
-                          ) : null;
-                        })()}
-                        {plan.priceUsd > 0 && plan.originalPriceUsd && plan.originalPriceUsd > plan.priceUsd && (
-                          <span className="absolute -top-2 md:-top-0 right-10 md:right-2 text-base text-rose-500 font-mono font-bold opacity-90 flex items-center justify-center">
-                            <span className="relative inline-block">
-                              <span className="absolute top-1/2 left-0 w-full h-[3px] bg-rose-500 transform -translate-y-1/2 -rotate-12 shadow-[0_0_8px_rgba(244,63,94,0.8)]"></span>
-                              ${plan.originalPriceUsd}
+                          )}
+                        </div>
+                        <div className="relative inline-block w-full text-center py-4">
+                          {plan.priceUsd > 0 && plan.originalPriceUsd && plan.originalPriceUsd > plan.priceUsd && (
+                            <span className="absolute -top-2 md:-top-0 right-10 md:right-2 text-base text-rose-500 font-mono font-bold opacity-90 flex items-center justify-center">
+                              <span className="relative inline-block">
+                                <span className="absolute top-1/2 left-0 w-full h-[3px] bg-rose-500 transform -translate-y-1/2 -rotate-12 shadow-[0_0_8px_rgba(244,63,94,0.8)]"></span>
+                                ${plan.originalPriceUsd}
+                              </span>
                             </span>
-                          </span>
-                        )}
-                        <h4 className="text-5xl lg:text-6xl font-display font-extrabold text-white tracking-tighter w-full relative z-10 drop-shadow-[0_2px_10px_rgba(255,255,255,0.2)] group-hover:drop-shadow-[0_5px_15px_rgba(255,255,255,0.4)] transition-all">
-                          {plan.priceUsd === 0 ? t('FREE', 'FREE') : `$${plan.priceUsd}`}
-                        </h4>
-                        {hasCheckedLkr && plan.priceUsd > 0 && (
-                          <div className="text-xs font-mono font-bold text-amber-300 mt-2.5 animate-pulse relative z-10">
-                            ~ Rs. {(plan.priceUsd * liveLkrRate).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} LKR
-                          </div>
-                        )}
+                          )}
+                          <h4 className="text-5xl lg:text-6xl font-display font-extrabold text-white tracking-tighter w-full relative z-10 drop-shadow-[0_2px_10px_rgba(255,255,255,0.2)] group-hover:drop-shadow-[0_5px_15px_rgba(255,255,255,0.4)] transition-all">
+                            {plan.priceUsd === 0 ? t('FREE', 'FREE') : `$${plan.priceUsd}`}
+                          </h4>
+                          {hasCheckedLkr && plan.priceUsd > 0 && (
+                            <div className="text-xs font-mono font-bold text-amber-300 mt-2.5 animate-pulse relative z-10">
+                              ~ Rs. {(plan.priceUsd * liveLkrRate).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} LKR
+                            </div>
+                          )}
+                        </div>
+                        <p className="text-[10px] sm:text-xs text-slate-400/90 leading-relaxed font-sans mt-2 min-h-[40px] px-2 w-full flex items-center justify-center font-medium group-hover:text-slate-300 transition-colors">
+                          {t(plan.durationLabel, plan.durationLabel)}
+                        </p>
                       </div>
-                      <p className="text-[10px] sm:text-xs text-slate-400/90 leading-relaxed font-sans mt-2 min-h-[40px] px-2 w-full flex items-center justify-center font-medium group-hover:text-slate-300 transition-colors">
-                        {t(plan.durationLabel, plan.durationLabel)}
-                      </p>
-                    </div>
 
-                    <div className="w-full mt-auto relative z-10">
-                      <button
-                        onClick={(e) => {
-                           e.stopPropagation();
-                           handleSelectPlanAction(plan);
-                        }}
-                        className={`w-full py-3.5 rounded-2xl text-[11px] font-mono font-bold uppercase tracking-widest transition-all duration-300 cursor-pointer shadow-lg active:scale-95 ${
-                          selectedPlanIdInPlans === plan.id 
-                            ? 'bg-[#00f0ff] text-slate-950 border-cyan-400 font-black shadow-[#00f0ff]/20'
-                            : 'bg-white/5 border border-white/20 text-slate-200 group-hover:bg-cyan-500/20 group-hover:text-cyan-100 group-hover:border-cyan-400/50'
-                        }`}
-                      >
-                         {selectedPlanIdInPlans === plan.id ? t('SELECTED PLAN', 'SELECTED PLAN') : t('SELECT PLAN', 'SELECT PLAN')}
-                      </button>
+                      <div className="w-full mt-auto relative z-10">
+                        <button
+                          onClick={(e) => {
+                             e.stopPropagation();
+                             handleSelectPlanAction(plan);
+                          }}
+                          className={`w-full py-3.5 rounded-2xl text-[11px] font-mono font-bold uppercase tracking-widest transition-all duration-300 cursor-pointer shadow-lg active:scale-95 ${
+                            selectedPlanIdInPlans === plan.id 
+                              ? 'bg-[#00f0ff] text-slate-950 border-cyan-400 font-black shadow-[#00f0ff]/20'
+                              : 'bg-white/5 border border-white/20 text-slate-200 group-hover:bg-cyan-500/20 group-hover:text-cyan-100 group-hover:border-cyan-400/50'
+                          }`}
+                        >
+                           {selectedPlanIdInPlans === plan.id ? t('SELECTED PLAN', 'SELECTED PLAN') : t('SELECT PLAN', 'SELECT PLAN')}
+                        </button>
+                      </div>
                     </div>
                   </div>
                 ))}
