@@ -3135,12 +3135,17 @@ export default function App() {
                       ) : null;
                     })()}
                     <div 
-                      onClick={() => handleSelectPlanAction(plan)}
+                      onClick={() => {
+                        if (isCurrentPlan) return;
+                        handleSelectPlanAction(plan);
+                      }}
                       className={`glass-panel p-6 rounded-3xl flex flex-col items-center justify-between space-y-6 transition-all duration-500 text-center relative group hover:-translate-y-4 hover:scale-105 ${
-                        selectedPlanIdInPlans === plan.id 
-                          ? 'border-[#00f0ff] bg-cyan-950/25 shadow-[0_0_25px_rgba(0,240,255,0.25)]'
-                          : 'border-white/10 hover:border-cyan-400/50 hover:shadow-[0_20px_50px_-10px_rgba(34,211,238,0.4)]'
-                      } shadow-[0_10px_30px_-15px_rgba(0,0,0,0.8)] cursor-pointer transform-gpu bg-gradient-to-b from-slate-800/80 to-[#0a0a16]`}
+                        isCurrentPlan
+                          ? 'opacity-60 cursor-not-allowed'
+                          : selectedPlanIdInPlans === plan.id 
+                            ? 'border-[#00f0ff] bg-cyan-950/25 shadow-[0_0_25px_rgba(0,240,255,0.25)]'
+                            : 'border-white/10 hover:border-cyan-400/50 hover:shadow-[0_20px_50px_-10px_rgba(34,211,238,0.4)]'
+                      } ${isCurrentPlan ? '' : 'hover:-translate-y-4 hover:scale-105'} shadow-[0_10px_30px_-15px_rgba(0,0,0,0.8)] ${isCurrentPlan ? 'cursor-not-allowed' : 'cursor-pointer'} transform-gpu bg-gradient-to-b from-slate-800/80 to-[#0a0a16]`}
                     >
                       <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-cyan-400/10 to-transparent blur-2xl pointer-events-none group-hover:from-cyan-400/20 transition-all duration-500" />
                       
