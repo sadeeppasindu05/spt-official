@@ -216,7 +216,7 @@ export default function App() {
   // Simple, elegant bilingual translation helper
   const t = (siText: string, enText: string) => (language === 'si' ? siText : enText);
 
-  // Globals live CMS configurations managed in React context/state with local storage persistence
+  // Globals live CMS configurations managed in React context/state synced to Supabase system_config
   const [config, setConfig] = useState<SystemConfig>(() => ({
       bgImage: SPACE_WALLPAPERS[0].url,
       glassOpacity: 0.18,
@@ -580,22 +580,21 @@ export default function App() {
           }, ...prev];
         });
 
-        // Upsert profile to Supabase (for Google OAuth / auto-signup paths)
+        // Sync profile to Supabase (reliably via server endpoint using service_role)
         try {
-          const { data: existingProfile } = await supabase.from('profiles').select('id').eq('id', session.user.id).maybeSingle();
-          if (!existingProfile) {
-            await supabase.from('profiles').upsert({
-              id: session.user.id,
+          await fetch('/api/admin/sync-profile', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
               email: email.toLowerCase(),
               name,
               role: email === 'sadeeppasindu0218@gmail.com' ? 'admin' : 'user',
               subscription_status: 'trial',
               subscription_expires_at: new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString(),
-              updated_at: new Date().toISOString()
-            }, { onConflict: 'id' });
-          }
+            }),
+          });
         } catch (err) {
-          console.error("Profile upsert error:", err);
+          console.error("Profile sync error (server):", err);
         }
       } else {
         setCustomerSession(null);
@@ -1675,13 +1674,11 @@ export default function App() {
   // Sync user profile fields to Supabase profiles table
   const syncProfileToSupabase = async (email: string, updates: Record<string, any>) => {
     try {
-      const { data: profiles } = await supabase.from('profiles').select('id').eq('email', email.toLowerCase()).limit(1);
-      if (profiles && profiles.length > 0) {
-        await supabase.from('profiles').update({
-          ...updates,
-          updated_at: new Date().toISOString()
-        }).eq('id', profiles[0].id);
-      }
+      await fetch('/api/admin/sync-profile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email.toLowerCase(), ...updates }),
+      });
     } catch (err) {
       console.error("Profile sync error:", err);
     }
@@ -2200,7 +2197,7 @@ export default function App() {
     }
   };
 
-  const handleGoogleDirectLogin = () => {
+  const handleGoogleDirectLogin = async () => {
     const googleEmail = 'spt.googleuser@gmail.com';
     setCustomerSession({
       name: 'Google User',
@@ -2267,6 +2264,22 @@ export default function App() {
         setPendingPlanCheckoutAfterLogin(null);
       }
       setActiveTab('plans');
+    }
+    // Sync guest profile to Supabase
+    try {
+      await fetch('/api/admin/sync-profile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: googleEmail,
+          name: 'Google User',
+          role: 'user',
+          subscription_status: 'trial',
+          subscription_expires_at: new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString(),
+        }),
+      });
+    } catch (err) {
+      console.error("Profile sync error (server):", err);
     }
     alert('Google සෘජු පිවිසුම සාර්ථකයි! (Google login successful)');
   };
@@ -4498,28 +4511,21 @@ export default function App() {
                     alert('Sadeep Pasindu Elite Console Unlocked! Admin tab is now visible in your navigation links bar.');
                   }
 
-                  if (import.meta.env.VITE_SUPABASE_URL) {
-                    try {
-                      const { data: { user } } = await supabase.auth.getUser();
-                      if (user) {
-                        // Only set trial for NEW profiles (signup), not existing ones (login)
-                        const { data: existingProfile } = await supabase.from('profiles').select('id').eq('id', user.id).maybeSingle();
-                        const isNewProfile = !existingProfile;
-                        await supabase.from('profiles').upsert({
-                          id: user.id,
-                          email: resolvedEmail,
-                          name: displayName,
-                          role: isMasterAdmin ? 'admin' : 'user',
-                          ...(isNewProfile ? {
-                            subscription_status: 'trial',
-                            subscription_expires_at: new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString(),
-                          } : {}),
-                          updated_at: new Date().toISOString()
-                        }, { onConflict: 'id' });
-                      }
-                    } catch (err) {
-                      console.error("Profile sync error:", err);
-                    }
+                  // Sync profile to Supabase (reliably via server endpoint using service_role)
+                  try {
+                    await fetch('/api/admin/sync-profile', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        email: resolvedEmail,
+                        name: displayName,
+                        role: isMasterAdmin ? 'admin' : 'user',
+                        subscription_status: 'trial',
+                        subscription_expires_at: new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString(),
+                      }),
+                    });
+                  } catch (err) {
+                    console.error("Profile sync error (server):", err);
                   }
 
                   setShowLoginWall(false);
@@ -4560,13 +4566,9 @@ export default function App() {
                     setPendingPlanCheckoutAfterLogin(null);
                   }
 
-                  // Redirect at the VERY END: signup→plans, login→home
-                  console.log('[onSuccess] Redirecting to:', isLoginFlow ? 'home' : 'plans');
-                  if (isLoginFlow) {
-                    setActiveTab('home');
-                  } else {
-                    setActiveTab('plans');
-                  }
+                  // Redirect: both login and signup go to home (trial already active)
+                  console.log('[onSuccess] Redirecting to: home');
+                  setActiveTab('home');
                 }}
               />
             </div>

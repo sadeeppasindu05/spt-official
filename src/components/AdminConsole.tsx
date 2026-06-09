@@ -5884,7 +5884,7 @@ export default function AdminConsole({
                 <h3 className="text-lg font-display font-bold text-white flex items-center gap-2">
                   <RefreshCw className="w-5 h-5 text-emerald-400" /> Auto Backup
                 </h3>
-                <p className="text-xs text-slate-400 mt-1">ස්වයංක්‍රීයව backup කිරීමේ කාල පරතරය තෝරන්න. Backup data local browser එකේ save වෙයි.</p>
+                <p className="text-xs text-slate-400 mt-1">ස්වයංක්‍රීයව backup කිරීමේ කාල පරතරය තෝරන්න. Backup data session එක තුළ save වෙයි (page reload වූ විට reset වේ).</p>
               </div>
             </div>
 
@@ -6022,7 +6022,7 @@ export default function AdminConsole({
               <BackupActionCard
                 icon={<RefreshCw className="w-8 h-8" />}
                 title="Restore from Auto Backup"
-                description="Browser එකේ auto-save වෙලා තියෙන latest auto backup එකෙන් restore කරන්න."
+                description="Session එක තුළ auto-save වෙලා තියෙන latest auto backup එකෙන් restore කරන්න."
                 buttonLabel="🔄 Restore Auto Backup"
                 buttonColor="from-emerald-400 to-teal-500"
                 onAction={() => {
@@ -6057,7 +6057,7 @@ export default function AdminConsole({
                   <h4 className="text-sm font-bold text-white font-mono tracking-wide">Backup Instructions</h4>
                   <ul className="mt-2 space-y-1.5 text-xs text-slate-400 leading-relaxed">
                     <li>1. <span className="text-cyan-400">Download Backup</span> click කර JSON file එක Google Drive එකට save කරන්න.</li>
-                    <li>2. Auto Backup frequency එකක් තෝරන්න — browser එකේ auto save වෙයි.</li>
+                    <li>2. Auto Backup frequency එකක් තෝරන්න — session එක තුළ auto save වෙයි (page reload වූ විට reset වේ).</li>
                     <li>3. ප්‍රතිස්ථාපනයට file upload කරන්න හෝ auto backup එකෙන් restore කරන්න.</li>
                     <li>4. Restore කළ පසු current data සියල්ල backup data වලින් replace වෙයි.</li>
                   </ul>
