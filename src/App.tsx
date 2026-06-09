@@ -4562,11 +4562,11 @@ export default function App() {
                     setPendingPlanCheckoutAfterLogin(null);
                   }
 
-                  // Redirect: signup→plans, login→home (trial already active for both)
+                  // Redirect: login→home, signup→tools (free trial auto-activated)
                   if (isLoginFlow) {
                     setActiveTab('home');
                   } else {
-                    setActiveTab('plans');
+                    setActiveTab('tools');
                   }
                 }}
               />
