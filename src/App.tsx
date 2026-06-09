@@ -3064,6 +3064,16 @@ export default function App() {
                         )}
                       </div>
                       <div className="relative inline-block w-full text-center py-4">
+                        {(() => {
+                          const cu = customerSession ? sptUsersList.find(u => u.email.toLowerCase() === customerSession.email.toLowerCase()) : null;
+                          const isTrial = cu && (cu.subscriptionStatus === 'trial' || cu.subscriptionStatus === 'active') && plan.priceUsd === 0;
+                          const isPaid = cu && cu.subscriptionStatus === 'active' && cu.subscriptionPlan && plan.title.toLowerCase().includes(cu.subscriptionPlan);
+                          return (isTrial || isPaid) ? (
+                            <div className="absolute -top-1 left-1/2 -translate-x-1/2 bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-3 py-0.5 rounded-full text-[9px] font-bold tracking-widest shadow-[0_0_10px_rgba(16,185,129,0.2)] z-20 whitespace-nowrap">
+                              {t('ඔබේ වත්මන් පැකේජය', 'YOUR CURRENT PLAN')}
+                            </div>
+                          ) : null;
+                        })()}
                         {plan.priceUsd > 0 && plan.originalPriceUsd && plan.originalPriceUsd > plan.priceUsd && (
                           <span className="absolute -top-2 md:-top-0 right-10 md:right-2 text-base text-rose-500 font-mono font-bold opacity-90 flex items-center justify-center">
                             <span className="relative inline-block">
@@ -4562,12 +4572,12 @@ export default function App() {
                     setPendingPlanCheckoutAfterLogin(null);
                   }
 
-                  // Redirect: login→home, signup→tools (free trial auto-activated)
-                  if (isLoginFlow) {
-                    setActiveTab('home');
-                  } else {
-                    setActiveTab('tools');
+                  // Auto-select free plan for signup, then redirect to Plans
+                  if (!isLoginFlow) {
+                    const fp = subscriptionPlans.find((p: any) => p.priceUsd === 0);
+                    if (fp) setSelectedPlanIdInPlans(fp.id);
                   }
+                  setActiveTab(isLoginFlow ? 'home' : 'plans');
                 }}
               />
             </div>
