@@ -1908,10 +1908,17 @@ export default function App() {
   }, [customerSession]);
 
   React.useEffect(() => {
-    if (activeTab === 'tools' && !customerSession) {
-      setShowLoginWall(true);
+    if (activeTab === 'tools') {
+      if (!customerSession) {
+        setShowLoginWall(true);
+      } else {
+        const status = getUserSubscriptionStatus(customerSession.email);
+        if (status.status !== 'active' && status.status !== 'trial') {
+          setShowLoginWall(true);
+        }
+      }
     }
-  }, [activeTab, customerSession]);
+  }, [activeTab, customerSession, sptUsersList]);
 
   // Open Tools inside Drawer state
   const [activeToolId, setActiveToolId] = useState<string | null>(null);
@@ -3364,15 +3371,9 @@ export default function App() {
                       <span className="relative z-10 px-3 text-[10px] uppercase font-mono text-slate-500 bg-[#03020b]/90">{t('ක්‍ෂණික සක්‍රීය කිරීම', 'Instant Activation')}</span>
                     </div>
 
-                    <button
-                      onClick={handleGoogleDirectLogin}
-                      className="w-full py-3.5 rounded-2xl bg-white/5 border border-white/10 text-[#00f0ff] hover:text-white hover:bg-white/10 hover:border-cyan-400/25 font-bold font-mono text-[10px] uppercase tracking-wider transition-all cursor-pointer flex items-center justify-center gap-2"
-                    >
-                      <svg className="w-4 h-4 text-rose-400" viewBox="0 0 24 24" fill="currentColor">
-                        <path d="M12.24 10.285V13.4h6.887C18.2 15.614 15.645 18 12.24 18c-3.86 0-7-3.14-7-7s3.14-7 7-7c1.84 0 3.513.697 4.79 1.833l2.42-2.42C17.472 1.67 14.965 1 12.24 1 6.58 1 2 5.58 2 11.24s4.58 10.24 10.24 10.24c5.905 0 9.814-4.148 9.814-10 0-.671-.059-1.32-.174-1.954h-9.64z" />
-                      </svg>
-                      {t('අමුත්තෙකු ලෙස ක්ෂණිකව පිවිසෙන්න', 'Continue as Guest Visitor')}
-                    </button>
+                    <p className="text-[10px] text-slate-500 text-center">
+                      {t('මෙවලම් භාවිත කිරීමට ලියාපදිංචි වෙන්න හෝ පිවිසෙන්න.', 'Please sign up or log in to access tools.')}
+                    </p>
                   </div>
                 </div>
               ) : getUserSubscriptionStatus(customerSession?.email).status === 'pending' ? (
@@ -4619,7 +4620,7 @@ export default function App() {
                     const username = displayName || 'USER';
                     const cleanName = username.toUpperCase().split(' ')[0].replace(/[^A-Z]/g, '');
                     const randomSuffix = Math.floor(1000 + Math.random() * 9000);
-                    setGeneratedRefCode(`SPT-${cleanName}-${randomSuffix}`);
+                    setGeneratedRefCode("SPT-" + cleanName + "-" + randomSuffix);
                     setShowPaymentCheckout(true);
                     setPendingPlanCheckoutAfterLogin(null);
                   }
@@ -4628,8 +4629,15 @@ export default function App() {
                   if (!isLoginFlow) {
                     const fp = subscriptionPlans.find((p: any) => p.priceUsd === 0);
                     if (fp) setSelectedPlanIdInPlans(fp.id);
+                    setActiveTab('tools');
+                  } else {
+                    // Login flow: active plan -> tools, expired -> plans
+                    if (hasActivePlan) {
+                      setActiveTab('tools');
+                    } else {
+                      setActiveTab('plans');
+                    }
                   }
-                  setActiveTab('tools');
                 }}
               />
             </div>
