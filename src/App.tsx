@@ -4625,18 +4625,15 @@ export default function App() {
                     setPendingPlanCheckoutAfterLogin(null);
                   }
 
-                  // Auto-select free plan for signup, then redirect to Tools (free trial active)
+                  // Auto-select free plan for signup
                   if (!isLoginFlow) {
                     const fp = subscriptionPlans.find((p: any) => p.priceUsd === 0);
                     if (fp) setSelectedPlanIdInPlans(fp.id);
-                    setActiveTab('tools');
+                    // Signup -> Plans page (free trial active, countdown shows)
+                    setActiveTab('plans');
                   } else {
-                    // Login flow: active plan -> tools, expired -> plans
-                    if (hasActivePlan) {
-                      setActiveTab('tools');
-                    } else {
-                      setActiveTab('plans');
-                    }
+                    // Login -> Home page
+                    setActiveTab('home');
                   }
                 }}
               />
