@@ -419,9 +419,17 @@ export default function App() {
           console.log("System config table failed to load or does not exist yet.", configFetchErr);
         }
 
-        // Load marketing counters from Supabase
+        // Load marketing counters from Supabase (create initial row if missing)
         try {
-          const { data: counters } = await supabase.from('marketing_counters').select('*').eq('id', 'global').maybeSingle();
+          let { data: counters } = await supabase.from('marketing_counters').select('*').eq('id', 'global').maybeSingle();
+          if (!counters) {
+            const { data: newCounters, error: insertErr } = await supabase.from('marketing_counters').insert({
+              id: 'global',
+              registered_count: 592,
+              subscribed_count: 370
+            }).select().single();
+            if (!insertErr && newCounters) counters = newCounters;
+          }
           if (counters) {
             if (counters.registered_count != null) setDisplayRegisteredCount(counters.registered_count);
             if (counters.subscribed_count != null) setDisplaySubscribedCount(counters.subscribed_count);
@@ -498,7 +506,7 @@ export default function App() {
     });
 
     // Subscribe to realtime changes on all content tables
-    const contentTables = ['services','tools','brands','offers','reviews','blogs','homestats','aboutcards','gateways','contacts','plans','system_config','support_messages','telemetry'] as const;
+    const contentTables = ['services','tools','brands','offers','reviews','blogs','homestats','aboutcards','gateways','contacts','plans','system_config','support_messages','telemetry','marketing_counters','admins'] as const;
     const realtimeChannel = supabase
       .channel('all-tables-realtime')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'services' }, () => refetchTable('services'))
@@ -515,6 +523,7 @@ export default function App() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'system_config' }, () => refetchTable('system_config'))
       .on('postgres_changes', { event: '*', schema: 'public', table: 'support_messages' }, () => refetchTable('support_messages'))
       .on('postgres_changes', { event: '*', schema: 'public', table: 'telemetry' }, () => refetchTable('telemetry'))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'marketing_counters' }, () => refetchTable('marketing_counters'))
       .on('postgres_changes', { event: '*', schema: 'public', table: 'admins' }, () => refetchTable('admins'))
       .subscribe();
 
@@ -649,6 +658,14 @@ export default function App() {
             elementName: item.element_name, timestamp: item.timestamp,
             sessionToken: item.session_token, ipLocation: item.ip_location
           })));
+          break;
+        }
+        case 'marketing_counters': {
+          const { data } = await supabase.from('marketing_counters').select('*').eq('id', 'global').maybeSingle();
+          if (data) {
+            if (data.registered_count != null) setDisplayRegisteredCount(data.registered_count);
+            if (data.subscribed_count != null) setDisplaySubscribedCount(data.subscribed_count);
+          }
           break;
         }
       }
@@ -2652,7 +2669,7 @@ export default function App() {
             <div className="flex items-center gap-1.5 text-slate-300">
               <Activity className="w-3 h-3 text-amber-400" />
               <span>{t('මාර්ගගත', 'Online')}:</span>
-              <span className="text-amber-300 font-bold">{14 - 1 + liveOnlineCount}</span>
+              <span className="text-amber-300 font-bold">{14 + liveOnlineCount}</span>
             </div>
           </div>
           {countdownDisplay && (
