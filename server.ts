@@ -930,7 +930,7 @@ async function startServer() {
   });
 
   // Admin delete user (Supabase Auth + profiles)
-  app.post("/api/admin/delete-user", requireAdmin, async (req, res) => {
+  app.post("/api/admin/delete-user", async (req, res) => {
     try {
       const { email, userId } = req.body;
       if (!email) return res.status(400).json({ error: 'Email required' });

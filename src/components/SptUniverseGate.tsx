@@ -126,11 +126,44 @@ export default function SptUniverseGate({ onClose, onSuccess, language = 'en', r
       }
       setPassword('');
     } catch (err: any) {
-      setErrorMessage(
-        err.message 
-          ? (language === 'si' ? 'ඊමේල් හෝ මුරපදය වැරදියි: ' + err.message : 'Invalid login: ' + err.message)
-          : gt('ඔබගේ ඊමේල් ලිපිනය හෝ මුරපදය වැරදියි.', 'Invalid email address or password.')
-      );
+      // Auto-signup if invalid credentials
+      if (err.message && (err.message.includes('Invalid login credentials') || err.message.includes('invalid_credentials'))) {
+        try {
+          const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+            email,
+            password,
+            options: { data: { full_name: fullName || email.split('@')[0] } }
+          });
+          if (signUpError) throw signUpError;
+
+          // Send confirmation email
+          await fetch('/api/send-confirmation', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, password }),
+          });
+
+          setOtpMode('signup');
+          setOtpValue('');
+          setShowOtpInput(true);
+          setSuccessMessage(gt(
+            '✅ ලියාපදිංචිය සාර්ථකයි! ඔබගේ ඊමේල් ලිපිනයට OTP කේතයක් එවා ඇත.',
+            '✅ Registration successful! An OTP code has been sent to your email.'
+          ));
+        } catch (signUpErr: any) {
+          setErrorMessage(
+            language === 'si'
+              ? 'ගිණුමක් සොයා ගැනීමට නොහැකි විය. නව ගිණුමක් ඇති කිරීමට උත්සාහ කරන විට දෝෂයක්: ' + signUpErr.message
+              : 'Account not found. Error during auto-signup: ' + signUpErr.message
+          );
+        }
+      } else {
+        setErrorMessage(
+          err.message 
+            ? (language === 'si' ? 'ඊමේල් හෝ මුරපදය වැරදියි: ' + err.message : 'Invalid login: ' + err.message)
+            : gt('ඔබගේ ඊමේල් ලිපිනය හෝ මුරපදය වැරදියි.', 'Invalid email address or password.')
+        );
+      }
     } finally {
       setIsLoading(false);
     }
