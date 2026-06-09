@@ -23,15 +23,17 @@ export function getYouTubeEmbedId(url: string | undefined): string | null {
   return (match && match[2].length === 11) ? match[2] : null;
 }
 
-function ActivePlanCountdown({ email, sptUsersList }: { email: string; sptUsersList: SptUser[] }) {
+function ActivePlanCountdown({ email, sptUsersList, setSptUsersList }: { email: string; sptUsersList: SptUser[]; setSptUsersList?: React.Dispatch<React.SetStateAction<SptUser[]>> }) {
   const user = sptUsersList.find(u => u.email.toLowerCase() === email.toLowerCase());
   const [timeLeft, setTimeLeft] = React.useState<string>('');
+  const expiredRef = React.useRef(false);
 
   React.useEffect(() => {
     if (!user) {
       setTimeLeft('');
       return;
     }
+    expiredRef.current = false;
     
     const updateCountdown = () => {
       const status = user.subscriptionStatus;
@@ -59,10 +61,18 @@ function ActivePlanCountdown({ email, sptUsersList }: { email: string; sptUsersL
 
       if (diff <= 0) {
         setTimeLeft('Expired / අවසන් වී ඇත');
+        // Auto-set status to expired once
+        if (!expiredRef.current && setSptUsersList) {
+          expiredRef.current = true;
+          setSptUsersList(prev => prev.map(u =>
+            u.email.toLowerCase() === email.toLowerCase()
+              ? { ...u, subscriptionStatus: 'expired' as const }
+              : u
+          ));
+        }
         return;
       }
 
-      // Calculate months, days, hours, minutes, seconds
       const sec = 1000;
       const min = sec * 60;
       const hour = min * 60;
@@ -94,7 +104,7 @@ function ActivePlanCountdown({ email, sptUsersList }: { email: string; sptUsersL
     updateCountdown();
     const interval = setInterval(updateCountdown, 1000);
     return () => clearInterval(interval);
-  }, [user, sptUsersList]);
+  }, [user, sptUsersList, setSptUsersList, email]);
 
   if (!timeLeft) return null;
 
@@ -102,10 +112,18 @@ function ActivePlanCountdown({ email, sptUsersList }: { email: string; sptUsersL
   const isLifetime = timeLeft.includes('LIFETIME');
 
   return (
-    <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-cyan-950/40 border border-cyan-800/40 text-[10px] font-mono text-cyan-300 font-bold shadow-[0_0_12px_rgba(0,240,255,0.1)] select-none shrink-0">
+    <div className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-[10px] font-mono font-bold shadow-[0_0_12px_rgba(0,240,255,0.1)] select-none shrink-0 ${
+      isExpired
+        ? 'bg-rose-950/40 border border-rose-800/40 text-rose-300'
+        : 'bg-cyan-950/40 border border-cyan-800/40 text-cyan-300'
+    }`}>
       <span className="relative flex h-2 w-2">
-        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#00f0ff] opacity-75"></span>
-        <span className="relative inline-flex rounded-full h-2 w-2 bg-[#00f0ff]"></span>
+        <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${
+          isExpired ? 'bg-rose-400' : 'bg-[#00f0ff]'
+        }`}></span>
+        <span className={`relative inline-flex rounded-full h-2 w-2 ${
+          isExpired ? 'bg-rose-400' : 'bg-[#00f0ff]'
+        }`}></span>
       </span>
       <span>{timeLeft}</span>
     </div>
@@ -2407,7 +2425,7 @@ export default function App() {
             </div>
           </div>
           {customerSession && (
-            <ActivePlanCountdown email={customerSession.email} sptUsersList={sptUsersList} />
+            <ActivePlanCountdown email={customerSession.email} sptUsersList={sptUsersList} setSptUsersList={setSptUsersList} />
           )}
         </div>
       </header>
@@ -4271,6 +4289,8 @@ export default function App() {
                     }
                   }
 
+                  // Auto-redirect to plans page after signup
+                  setActiveTab('plans');
                   // Increment display counters for marketing
                   setDisplayRegisteredCount(prev => prev + 1);
                   setDisplaySubscribedCount(prev => prev + 1);
