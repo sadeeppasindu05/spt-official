@@ -4,7 +4,7 @@ import {
   Sparkles, Layers, Compass, Tv, Music, PenTool, Shirt, Shield, QrCode, 
   Link2, User, LayoutDashboard, Eye, Star, Check, Plus, Search, Share2, 
   LogOut, Heart, Settings, Upload, Activity, Code, Smartphone, Paintbrush, 
-  CheckCircle, MessageSquare, Send, Copy, Lock, ChevronRight, Sparkle, ArrowRight, X, Info, Video, ExternalLink, BookOpen, Clock, RefreshCw, ShieldCheck
+  CheckCircle, MessageSquare, Send, Copy, Lock, ChevronRight, Sparkle, ArrowRight, X, Info, Video, ExternalLink, BookOpen, Clock, RefreshCw, ShieldCheck, CreditCard
 } from 'lucide-react';
 
 import { SPACE_WALLPAPERS, INITIAL_SERVICES, ACCESSORY_BRANDS, INITIAL_REVIEWS, INITIAL_TOOLS } from './data';
@@ -1826,6 +1826,13 @@ export default function App() {
     if (!u) return '';
     const { subscriptionStatus: st, subscriptionPlan: sp, subscriptionExpiresAt: se } = u;
     const isTrial = st === 'trial';
+    if (st === 'expired') {
+      if (se) {
+        const diff = new Date(se).getTime() - Date.now();
+        if (diff <= 0) return 'Expired';
+      }
+      return 'Expired';
+    }
     if (!isTrial && st !== 'active') return '';
     if (sp === 'lifetime') return 'LIFETIME PACK ACTIVE';
     if (!se) {
@@ -3431,6 +3438,16 @@ export default function App() {
                         'Your 7-day free trial has expired. To continue using the SPT Tools platform services, activate one of the special 90% discounted packages below.'
                       )}
                     </p>
+
+                    {/* Subscribe to Plan Button - redirects to Plans page */}
+                    <button
+                      onClick={() => setActiveTab('plans')}
+                      className="mx-auto mt-6 px-8 py-3 rounded-xl bg-gradient-to-r from-rose-500 to-rose-600 hover:from-rose-600 hover:to-rose-700 text-white font-bold font-mono text-sm uppercase tracking-wider shadow-lg shadow-rose-500/20 transition-all duration-300 cursor-pointer flex items-center justify-center gap-2 mx-auto"
+                    >
+                      <CreditCard className="w-4 h-4" />
+                      {t('පැකේජය තෝරා සක්‍රීය කරන්න', 'Subscribe to a Plan')}
+                      <ArrowRight className="w-4 h-4" />
+                    </button>
                   </div>
 
                   {/* Pricing Cards Grid */}
