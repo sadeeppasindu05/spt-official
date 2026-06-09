@@ -46,13 +46,10 @@ export default function CustomerSupportChat({ language = 'en' }: CustomerSupport
 
     // Attempt to pre-fill email if a user is logged in
     try {
-      const cachedUsers = localStorage.getItem('spt_users');
-      if (cachedUsers) {
-        const users = JSON.parse(cachedUsers);
-        if (users && users.length > 0) {
-          // Pre-fill with the first user found or last logged-in
-          setFormEmail(users[0].email || '');
-        }
+      const sessionStr = sessionStorage.getItem('spt_customer_session');
+      if (sessionStr) {
+        const session = JSON.parse(sessionStr);
+        if (session?.email) setFormEmail(session.email);
       }
     } catch (_) {}
   }, [language]);
@@ -136,11 +133,7 @@ export default function CustomerSupportChat({ language = 'en' }: CustomerSupport
         status: 'pending'
       };
 
-      const existingTickets = JSON.parse(localStorage.getItem('spt_support_messages') || '[]');
-      existingTickets.unshift(newTicket);
-      localStorage.setItem('spt_support_messages', JSON.stringify(existingTickets));
-
-      // Also sync to Supabase if available
+      // Sync to Supabase if available
       try {
         const isSupabaseReady = import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_ANON_KEY;
         if (isSupabaseReady) {

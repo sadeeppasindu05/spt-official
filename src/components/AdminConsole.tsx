@@ -441,41 +441,30 @@ export default function AdminConsole({
               status: item.status || 'pending'
             }));
             setSupportTickets(mapped);
-            localStorage.setItem('spt_support_messages', JSON.stringify(mapped));
             return;
           }
         } catch (err) {
           console.error('Failed to load support tickets from Supabase:', err);
         }
       }
-      // Fallback to localStorage
-      try {
-        const stored = localStorage.getItem('spt_support_messages');
-        if (stored) {
-          setSupportTickets(JSON.parse(stored));
-        } else {
-          const samples = [
-            {
-              id: 'ticket_sample_1',
-              email: 'sadeep@sptcreative.com',
-              message: 'Hello Sadeep! I would like to order a complete video editing contract and visual branding kit for our brand. Please contact me back as soon as you review this request.',
-              createdAt: new Date(Date.now() - 3600000 * 3).toISOString(),
-              status: 'pending'
-            },
-            {
-              id: 'ticket_sample_2',
-              email: 'dilshan_studio@gmail.com',
-              message: 'මට SPT Audio Tool එකෙන් නිර්මාණය කරගත්ත track එකක commercial license එක මිලදී ගැනීමට බලාපොරොත්තු වෙනවා. කරුණාකර ගෙවීම් පියවර එවන්න.',
-              createdAt: new Date(Date.now() - 3600000 * 25).toISOString(),
-              status: 'resolved'
-            }
-          ];
-          localStorage.setItem('spt_support_messages', JSON.stringify(samples));
-          setSupportTickets(samples);
+      // Fallback to sample data
+      const samples = [
+        {
+          id: 'ticket_sample_1',
+          email: 'sadeep@sptcreative.com',
+          message: 'Hello Sadeep! I would like to order a complete video editing contract and visual branding kit for our brand. Please contact me back as soon as you review this request.',
+          createdAt: new Date(Date.now() - 3600000 * 3).toISOString(),
+          status: 'pending'
+        },
+        {
+          id: 'ticket_sample_2',
+          email: 'dilshan_studio@gmail.com',
+          message: 'මට SPT Audio Tool එකෙන් නිර්මාණය කරගත්ත track එකක commercial license එක මිලදී ගැනීමට බලාපොරොත්තු වෙනවා. කරුණාකර ගෙවීම් පියවර එවන්න.',
+          createdAt: new Date(Date.now() - 3600000 * 25).toISOString(),
+          status: 'resolved'
         }
-      } catch (err) {
-        console.error(err);
-      }
+      ];
+      setSupportTickets(samples);
     };
 
     syncFromSupabase();
@@ -510,7 +499,6 @@ export default function AdminConsole({
     const newStatus = ticket.status === 'resolved' ? 'pending' : 'resolved';
     const updated = supportTickets.map(t => t.id === ticketId ? { ...t, status: newStatus } : t);
     setSupportTickets(updated);
-    localStorage.setItem('spt_support_messages', JSON.stringify(updated));
     const isSupabaseReady = import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_ANON_KEY;
     if (isSupabaseReady) {
       try { await supabase.from('support_messages').update({ status: newStatus }).eq('id', ticketId); } catch (err) { console.error('Failed to toggle ticket:', err); }
@@ -520,7 +508,6 @@ export default function AdminConsole({
   const handleDeleteTicket = async (ticketId: string) => {
     const updated = supportTickets.filter(t => t.id !== ticketId);
     setSupportTickets(updated);
-    localStorage.setItem('spt_support_messages', JSON.stringify(updated));
     const isSupabaseReady = import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_ANON_KEY;
     if (isSupabaseReady) {
       try { await supabase.from('support_messages').delete().eq('id', ticketId); } catch (err) { console.error('Failed to delete ticket:', err); }
@@ -705,22 +692,10 @@ export default function AdminConsole({
   const [newPayType, setNewPayType] = useState('bank');
 
   // Security Admins local state (persisted to localStorage)
-  const [adminUsers, setAdminUsers] = useState<any[]>(() => {
-    try {
-      const saved = localStorage.getItem('spt_admin_users');
-      if (saved) return JSON.parse(saved);
-    } catch (e) {}
-    return [
+  const [adminUsers, setAdminUsers] = useState<any[]>([
       { id: 'admin_1', name: 'Sadeep Pasindu', email: 'sadeeppasindu0218@gmail.com', role: 'superadmin', isActive: true },
       { id: 'admin_2', name: 'Staff Assistant', email: 'support@spt.com', role: 'moderator', isActive: true }
-    ];
-  });
-
-  // Persist admin users to localStorage on change
-  React.useEffect(() => {
-    localStorage.setItem('spt_admin_users', JSON.stringify(adminUsers));
-  }, [adminUsers]);
-  const [newAdminName, setNewAdminName] = useState('');
+  ]);
   const [newAdminEmail, setNewAdminEmail] = useState('');
   const [newAdminRole, setNewAdminRole] = useState('editor');
   const [adminRecoveryEmail, setAdminRecoveryEmail] = useState(config.adminRecoveryEmail || 'sadeeppasindu0218@gmail.com');

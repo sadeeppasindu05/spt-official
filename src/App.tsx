@@ -143,14 +143,8 @@ export default function App() {
   // Live online visitor count
   const [liveOnlineCount, setLiveOnlineCount] = useState<number>(0);
   // Persistent marketing counters (start at base, increment on each new signup/subscription)
-  const [displayRegisteredCount, setDisplayRegisteredCount] = useState<number>(() => {
-    const v = localStorage.getItem('spt_display_registered');
-    return v ? parseInt(v, 10) : 592;
-  });
-  const [displaySubscribedCount, setDisplaySubscribedCount] = useState<number>(() => {
-    const v = localStorage.getItem('spt_display_subscribed');
-    return v ? parseInt(v, 10) : 370;
-  });
+  const [displayRegisteredCount, setDisplayRegisteredCount] = useState<number>(592);
+  const [displaySubscribedCount, setDisplaySubscribedCount] = useState<number>(370);
   
   // Real-time Database/Platform Status state
   const [platformStatus, setPlatformStatus] = useState<'online' | 'local mode' | 'checking' | 'error'>('checking');
@@ -223,16 +217,7 @@ export default function App() {
   const t = (siText: string, enText: string) => (language === 'si' ? siText : enText);
 
   // Globals live CMS configurations managed in React context/state with local storage persistence
-  const [config, setConfig] = useState<SystemConfig>(() => {
-    const cached = localStorage.getItem('spt_config');
-    if (cached) {
-      try {
-        return JSON.parse(cached);
-      } catch (e) {
-        // use fallback
-      }
-    }
-    return {
+  const [config, setConfig] = useState<SystemConfig>(() => ({
       bgImage: SPACE_WALLPAPERS[0].url,
       glassOpacity: 0.18,
       glassBlur: 16,
@@ -258,15 +243,12 @@ export default function App() {
       adminPassword: 'spt',
       showUniverseAnimation: true,
       universeGifUrl: undefined
-    };
-  });
+  }));
 
   // Reference for the previous configuration state
   const prevConfigRef = React.useRef<SystemConfig>(config);
 
   React.useEffect(() => {
-    localStorage.setItem('spt_config', JSON.stringify(config));
-
     // Upload to Supabase if any configuration key changed and Supabase is ready
     const isSupabaseReady = import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_ANON_KEY;
     if (isSupabaseReady) {
@@ -1388,17 +1370,7 @@ export default function App() {
 
 
   // Real-time Telemetry states for data analytics suite
-  const [telemetryList, setTelemetryList] = useState<TelemetryEvent[]>(() => {
-    const cached = localStorage.getItem('spt_telemetry');
-    if (cached) {
-      try {
-        return JSON.parse(cached);
-      } catch (e) {
-        return [];
-      }
-    }
-    return [];
-  });
+  const [telemetryList, setTelemetryList] = useState<TelemetryEvent[]>([]);
 
   const trackTelemetryEvent = (type: 'pageview' | 'click' | 'signup' | 'contact', path: string, elementName?: string) => {
     let sessionToken = sessionStorage.getItem('spt_session_token');
@@ -1422,7 +1394,6 @@ export default function App() {
 
     setTelemetryList(prev => {
       const updated = [newEvent, ...prev].slice(0, 500);
-      localStorage.setItem('spt_telemetry', JSON.stringify(updated));
       return updated;
     });
 
@@ -1438,77 +1409,32 @@ export default function App() {
 
   const clearTelemetry = () => {
     setTelemetryList([]);
-    localStorage.removeItem('spt_telemetry');
     const isSupabaseReady = import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_ANON_KEY;
     if (isSupabaseReady) {
       supabase.from('telemetry').delete().neq('id', 'none').then(({ error }) => { if (error) console.error('Telemetry delete error:', error); });
     }
   };
 
-  // Dynamic lists capable of being updated by Admin with localStorage persistence
-  const [toolsList, setToolsList] = useState<SptTool[]>(() => {
-    const cached = localStorage.getItem('spt_tools');
-    return cached ? JSON.parse(cached) : INITIAL_TOOLS;
-  });
-  const [servicesList, setServicesList] = useState<ServiceItem[]>(() => {
-    const cached = localStorage.getItem('spt_services');
-    return cached ? JSON.parse(cached) : INITIAL_SERVICES;
-  });
-  const [brandsList, setBrandsList] = useState<AccessoryBrand[]>(() => {
-    const cached = localStorage.getItem('spt_brands');
-    return cached ? JSON.parse(cached) : ACCESSORY_BRANDS;
-  });
-  const [reviewsList, setReviewsList] = useState<ReviewItem[]>(() => {
-    const cached = localStorage.getItem('spt_reviews');
-    return cached ? JSON.parse(cached) : INITIAL_REVIEWS;
-  });
-
-  React.useEffect(() => {
-    localStorage.setItem('spt_tools', JSON.stringify(toolsList));
-  }, [toolsList]);
-  React.useEffect(() => {
-    localStorage.setItem('spt_services', JSON.stringify(servicesList));
-  }, [servicesList]);
-  React.useEffect(() => {
-    localStorage.setItem('spt_brands', JSON.stringify(brandsList));
-  }, [brandsList]);
-  React.useEffect(() => {
-    localStorage.setItem('spt_reviews', JSON.stringify(reviewsList));
-  }, [reviewsList]);
+  // Dynamic lists capable of being updated by Admin
+  const [toolsList, setToolsList] = useState<SptTool[]>(INITIAL_TOOLS);
+  const [servicesList, setServicesList] = useState<ServiceItem[]>(INITIAL_SERVICES);
+  const [brandsList, setBrandsList] = useState<AccessoryBrand[]>(ACCESSORY_BRANDS);
+  const [reviewsList, setReviewsList] = useState<ReviewItem[]>(INITIAL_REVIEWS);
 
   // New Custom States requested by user
-  const [subscriptionPlans, setSubscriptionPlans] = useState<any[]>(() => {
-    try {
-       const saved = localStorage.getItem('spt_subscription_plans');
-       if (saved) return JSON.parse(saved);
-    } catch(e) {}
-    // Default initial plans requested by user
-    return [
+  const [subscriptionPlans, setSubscriptionPlans] = useState<any[]>([
       { id: 'plan_1', title: 'WEEKLY PACK', priceUsd: 1, originalPriceUsd: 10, discountTag: '90% OFF', durationLabel: 'සතියක් වලංගු සම්පූර්ණ ප්‍රවේශය', isPopular: false, isFree: false },
       { id: 'plan_2', title: 'MONTHLY PACK', priceUsd: 3, originalPriceUsd: 30, discountTag: '90% OFF', durationLabel: 'මසක් වලංගු සම්පූර්ණ ප්‍රවේශය', isPopular: false, isFree: false },
       { id: 'plan_3', title: '6 MO PACK', priceUsd: 15, originalPriceUsd: 150, discountTag: '90% OFF', durationLabel: 'මාස 6ක කාලයක් සඳහා වරප්‍රසාද', isPopular: false, isFree: false },
       { id: 'plan_4', title: 'YEARLY PACK', priceUsd: 20, originalPriceUsd: 200, discountTag: '90% OFF', durationLabel: 'මුළු වසරක් සඳහා වලංගු SPT මෙවලම්', isPopular: false, isFree: false },
       { id: 'plan_5', title: 'LIFETIME PACK', priceUsd: 100, originalPriceUsd: 1000, discountTag: '90% OFF', durationLabel: 'ජීවිත කාලයටම SPT සාමාජිකත්වය', isPopular: false, isFree: false },
       { id: 'plan_6', title: '7-DAY FREE TRIAL', priceUsd: 0, durationLabel: 'නොමිලේ අත්හදා බැලීම (Free Trial)', isPopular: false, isFree: true }
-    ];
-  });
-  
-  React.useEffect(() => {
-    localStorage.setItem('spt_subscription_plans', JSON.stringify(subscriptionPlans));
-  }, [subscriptionPlans]);
+  ]);
 
-  const [supportMessagesList, setSupportMessagesList] = useState<any[]>(() => {
-    const cached = localStorage.getItem('spt_support_messages');
-    return cached ? JSON.parse(cached) : [];
-  });
-  const [systemConfigMap, setSystemConfigMap] = useState<Record<string,string>>(() => {
-    const cached = localStorage.getItem('spt_system_config');
-    return cached ? JSON.parse(cached) : {};
-  });
+  const [supportMessagesList, setSupportMessagesList] = useState<any[]>([]);
+  const [systemConfigMap, setSystemConfigMap] = useState<Record<string,string>>({});
 
-  const [offersList, setOffersList] = useState<OfferItem[]>(() => {
-    const cached = localStorage.getItem('spt_offers');
-    return cached ? JSON.parse(cached) : [
+  const [offersList, setOffersList] = useState<OfferItem[]>([
       {
         id: 'o1',
         title: 'AI Commercial Launch Offer',
@@ -1525,65 +1451,28 @@ export default function App() {
         validUntil: 'Permanent Offer',
         promoCode: 'SPTQR2026'
       }
-    ];
-  });
+  ]);
 
-  const [homeStatsList, setHomeStatsList] = useState<HomeStatCard[]>(() => {
-    const cached = localStorage.getItem('spt_homestats');
-    return cached ? JSON.parse(cached) : [
+  const [homeStatsList, setHomeStatsList] = useState<HomeStatCard[]>([
       { id: 'hs1', badge: 'AI Production', title: '100% Real-time APIs', description: 'SaaS Microservices' },
       { id: 'hs2', badge: 'Original Music', title: '50+ Tracks compiled', description: 'Bespoke Melodies' },
       { id: 'hs3', badge: 'Aura Styling', title: 'Modular theme controls', description: 'Dynamic Opacities' },
       { id: 'hs4', badge: 'Eco Apparel', title: 'Streetwear & Artworks', description: 'KBERA Printing' }
-    ];
-  });
+  ]);
 
-  const [aboutCardsList, setAboutCardsList] = useState<AboutCard[]>(() => {
-    const cached = localStorage.getItem('spt_aboutcards');
-    return cached ? JSON.parse(cached) : [
+  const [aboutCardsList, setAboutCardsList] = useState<AboutCard[]>([
       { id: 'a1', title: 'පරමාර්ථය (Our Vision)', description: 'සෑම ව්‍යාපාරයකටම සහ පුද්ගලයෙකුටම අවශ්‍ය උසස්ම මට්ටමේ ඩිජිටල්, වීඩියෝ සහ සංගීතමය සහාය සදහා නිරන්තරයෙන්ම නව්‍ය නිර්මාණ සැපයීම.', icon: 'Sparkles' },
       { id: 'a2', title: 'තාක්ෂණික පද්ධතිය (Tech Matrix)', description: 'අති නවීන AI ඇල්ගොරිතම සහ ක්ලවුඩ් පද්ධති භාවිතයෙන් සියලුම සේවා සහ මෙවලම් (SPT Tools Center) ක්‍රියාත්මක කිරීම.', icon: 'Layers' },
       { id: 'a3', title: 'විශ්වසනීයත්වය (Absolute Trust)', description: 'ඔබගේ තොරතුරු වල සුරක්ෂිතභාවය සහ ආයතනික රහස්‍යභාවය 100%ක් ඉහළින්ම සුරකින සුවිශේෂී ආරක්ෂක පද්ධතිය.', icon: 'Shield' }
-    ];
-  });
+  ]);
 
-  React.useEffect(() => {
-    localStorage.setItem('spt_offers', JSON.stringify(offersList));
-  }, [offersList]);
-  React.useEffect(() => {
-    localStorage.setItem('spt_homestats', JSON.stringify(homeStatsList));
-  }, [homeStatsList]);
-  React.useEffect(() => {
-    localStorage.setItem('spt_aboutcards', JSON.stringify(aboutCardsList));
-  }, [aboutCardsList]);
-
-  const [contactsList, setContactsList] = useState<ContactLinkItem[]>(() => {
-    const cached = localStorage.getItem('spt_contacts');
-    if (cached) {
-      try {
-        return JSON.parse(cached);
-      } catch (err) {}
-    }
-    return [
+  const [contactsList, setContactsList] = useState<ContactLinkItem[]>([
       { id: 'c1', title: 'WhatsApp Helpline', url: 'https://wa.me/94770000000', imageUrl: 'https://images.unsplash.com/photo-1614741118887-7a4ee193a5fa?q=80&w=200&auto=format&fit=crop' },
       { id: 'c2', title: 'Official Email Support', url: 'mailto:sadeeppasindu0218@gmail.com', imageUrl: 'https://images.unsplash.com/photo-1557200134-90327ee9fafa?q=80&w=200&auto=format&fit=crop' },
       { id: 'c3', title: 'Founder Facebook Profile', url: 'https://facebook.com', imageUrl: 'https://images.unsplash.com/photo-1627843563095-f6e94e7afee5?q=80&w=200&auto=format&fit=crop' }
-    ];
-  });
+  ]);
 
-  React.useEffect(() => {
-    localStorage.setItem('spt_contacts', JSON.stringify(contactsList));
-  }, [contactsList]);
-
-  const [sptUsersList, setSptUsersList] = useState<SptUser[]>(() => {
-    const cached = localStorage.getItem('spt_users');
-    if (cached) {
-      try {
-        return JSON.parse(cached);
-      } catch (err) {}
-    }
-    return [];
-  });
+  const [sptUsersList, setSptUsersList] = useState<SptUser[]>([]);
 
   // Fetch profiles from Supabase on mount + subscribe to realtime
   React.useEffect(() => {
@@ -1655,19 +1544,7 @@ export default function App() {
     return () => { supabase.removeChannel(channel); };
   }, []);
 
-  // Sync sptUsersList to localStorage as cache
-  React.useEffect(() => {
-    localStorage.setItem('spt_users', JSON.stringify(sptUsersList));
-  }, [sptUsersList]);
-
-  const [blogsList, setBlogsList] = useState<BlogPost[]>(() => {
-    const cached = localStorage.getItem('spt_blogs');
-    if (cached) {
-      try {
-        return JSON.parse(cached);
-      } catch (err) {}
-    }
-    return [
+  const [blogsList, setBlogsList] = useState<BlogPost[]>([
       {
         id: 'b1',
         title: 'Technology & High-End Art Fusion (තාක්ෂණය සහ කලා සුසංයෝගය)',
@@ -1686,41 +1563,23 @@ export default function App() {
         createdAt: new Date(Date.now() - 5 * 24 * 3600 * 1000).toISOString(),
         author: 'SPT Core System'
       }
-    ];
-  });
-
-  React.useEffect(() => {
-    localStorage.setItem('spt_blogs', JSON.stringify(blogsList));
-  }, [blogsList]);
+  ]);
 
   // Centralized Dynamic Payment Gateways
-  const [paymentGatewaysList, setPaymentGatewaysList] = useState<any[]>(() => {
-    const cached = localStorage.getItem('spt_payment_gateways');
-    if (cached) {
-      try {
-        return JSON.parse(cached);
-      } catch (err) {}
-    }
-    return [
+  const [paymentGatewaysList, setPaymentGatewaysList] = useState<any[]>([
       { id: 'pay_bank', type: 'bank', name: 'Bank Transfer (BOC, Commercial)', nameEn: 'Bank Transfer (BOC, Commercial)', details: 'Account number: 80249204021\nBank Name: Commercial Bank of Ceylon (ComBank)\nBranch: Gampaha Main City Office\nAccount Name: Sadeep Pasindu Creative Hub', detailsEn: 'Account number: 80249204021\nBank Name: Commercial Bank of Ceylon (ComBank)\nBranch: Gampaha Main City Office\nAccount Name: Sadeep Pasindu Creative Hub', isActive: true },
       { id: 'pay_gpay', type: 'googlepay', name: 'Google Pay', nameEn: 'Google Pay', details: 'GPAY: sptofficial@gmail.com\nSend funds safely to our Google Pay address.', detailsEn: 'GPAY: sptofficial@gmail.com\nSend funds safely to our Google Pay address.', isActive: false },
       { id: 'pay_paypal', type: 'paypal', name: 'PayPal', nameEn: 'PayPal', details: 'Paypal: sptofficial@paypal.com\nSend global payments securely to our business PayPal.', detailsEn: 'Paypal: sptofficial@paypal.com\nSend global payments securely to our business PayPal.', isActive: false }
-    ];
-  });
+  ]);
+
 
   React.useEffect(() => {
-    localStorage.setItem('spt_payment_gateways', JSON.stringify(paymentGatewaysList));
-  }, [paymentGatewaysList]);
-
-  React.useEffect(() => {
-    localStorage.setItem('spt_display_registered', String(displayRegisteredCount));
     const isSupabaseReady = import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_ANON_KEY;
     if (isSupabaseReady) {
       supabase.from('marketing_counters').upsert({ id: 'global', registered_count: displayRegisteredCount, updated_at: new Date().toISOString() }, { onConflict: 'id' }).then(({ error }) => { if (error) console.error('Counter sync error:', error); });
     }
   }, [displayRegisteredCount]);
   React.useEffect(() => {
-    localStorage.setItem('spt_display_subscribed', String(displaySubscribedCount));
     const isSupabaseReady = import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_ANON_KEY;
     if (isSupabaseReady) {
       supabase.from('marketing_counters').upsert({ id: 'global', subscribed_count: displaySubscribedCount, updated_at: new Date().toISOString() }, { onConflict: 'id' }).then(({ error }) => { if (error) console.error('Counter sync error:', error); });
@@ -1942,29 +1801,15 @@ export default function App() {
     }
   };
 
-  // Customer authentication session (persisted to localStorage)
-  const [customerSession, setCustomerSession] = useState<{ name: string; email: string } | null>(() => {
-    const cached = localStorage.getItem('spt_customer_session');
-    return cached ? JSON.parse(cached) : null;
-  });
-  // Sync customerSession to localStorage
-  React.useEffect(() => {
-    if (customerSession) {
-      localStorage.setItem('spt_customer_session', JSON.stringify(customerSession));
-    } else {
-      localStorage.removeItem('spt_customer_session');
-    }
-  }, [customerSession]);
+  // Customer authentication session
+  const [customerSession, setCustomerSession] = useState<{ name: string; email: string } | null>(null);
   const [newlyRegisteredUserEmail, setNewlyRegisteredUserEmail] = useState<string | null>(null);
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [timeTicker, setTimeTicker] = useState(Date.now());
 
   // Admin Security 6-Digit PIN States
-  const [adminPin, setAdminPinState] = useState<string>(() => {
-    return localStorage.getItem('spt_admin_pin') || '000000';
-  });
+  const [adminPin, setAdminPinState] = useState<string>('000000');
   const setAdminPin = (newPin: string) => {
-    localStorage.setItem('spt_admin_pin', newPin);
     setAdminPinState(newPin);
   };
   const [isAdminPinVerified, setIsAdminPinVerified] = useState(false);
