@@ -23,112 +23,7 @@ export function getYouTubeEmbedId(url: string | undefined): string | null {
   return (match && match[2].length === 11) ? match[2] : null;
 }
 
-function ActivePlanCountdown({ email, sptUsersList, setSptUsersList }: { email: string; sptUsersList: SptUser[]; setSptUsersList?: React.Dispatch<React.SetStateAction<SptUser[]>> }) {
-  const user = sptUsersList.find(u => u.email.toLowerCase() === email.toLowerCase());
-  const [timeLeft, setTimeLeft] = React.useState<string>('');
-  const expiredRef = React.useRef(false);
 
-  React.useEffect(() => {
-    if (!user) {
-      setTimeLeft('');
-      return;
-    }
-    expiredRef.current = false;
-    
-    const updateCountdown = () => {
-      const status = user.subscriptionStatus;
-      const isTrial = status === 'trial';
-      const isActive = status === 'active';
-      
-      if (!isTrial && !isActive) {
-        setTimeLeft('');
-        return;
-      }
-
-      if (user.subscriptionPlan === 'lifetime') {
-        setTimeLeft('LIFETIME PACK ACTIVE 🔥');
-        return;
-      }
-
-      const expiryStr = user.subscriptionExpiresAt;
-      if (!expiryStr) {
-        setTimeLeft('');
-        return;
-      }
-
-      const expiryTime = new Date(expiryStr).getTime();
-      const diff = expiryTime - Date.now();
-
-      if (diff <= 0) {
-        setTimeLeft('Expired / අවසන් වී ඇත');
-        // Auto-set status to expired once
-        if (!expiredRef.current && setSptUsersList) {
-          expiredRef.current = true;
-          setSptUsersList(prev => prev.map(u =>
-            u.email.toLowerCase() === email.toLowerCase()
-              ? { ...u, subscriptionStatus: 'expired' as const }
-              : u
-          ));
-        }
-        return;
-      }
-
-      const sec = 1000;
-      const min = sec * 60;
-      const hour = min * 60;
-      const day = hour * 24;
-      const monthComponent = day * 30.44;
-
-      const months = Math.floor(diff / monthComponent);
-      const days = Math.floor((diff % monthComponent) / day);
-      const hours = Math.floor((diff % day) / hour);
-      const minutes = Math.floor((diff % hour) / min);
-      const seconds = Math.floor((diff % min) / sec);
-
-      let displayText = '';
-      const rawPlan = user.subscriptionPlan || 'trial';
-      const isTrialMode = status === 'trial';
-      const planName = isTrialMode ? 'FREE TRIAL' : (rawPlan === '6months' ? '6-MO PACK' : `${rawPlan.toUpperCase()} PACK`);
-
-      if (months > 0) {
-        displayText = `${months}M ${days}D ${hours}H`;
-      } else if (days > 0) {
-        displayText = `${days}D ${hours}H ${minutes}M`;
-      } else {
-        displayText = `${hours}H ${minutes}M ${seconds}S`;
-      }
-
-      setTimeLeft(`${planName} ACTIVE | ${displayText}`);
-    };
-
-    updateCountdown();
-    const interval = setInterval(updateCountdown, 1000);
-    return () => clearInterval(interval);
-  }, [user, sptUsersList, setSptUsersList, email]);
-
-  if (!timeLeft) return null;
-
-  const isExpired = timeLeft.includes('Expired');
-  const isLifetime = timeLeft.includes('LIFETIME');
-
-  return (
-    <div className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-[10px] font-mono font-bold shadow-[0_0_12px_rgba(0,240,255,0.1)] select-none shrink-0 ${
-      isExpired
-        ? 'bg-rose-950/40 border border-rose-800/40 text-rose-300'
-        : 'bg-cyan-950/40 border border-cyan-800/40 text-cyan-300'
-    }`}>
-      <span className="relative flex h-2 w-2">
-        <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${
-          isExpired ? 'bg-rose-400' : 'bg-[#00f0ff]'
-        }`}></span>
-        <span className={`relative inline-flex rounded-full h-2 w-2 ${
-          isExpired ? 'bg-rose-400' : 'bg-[#00f0ff]'
-        }`}></span>
-      </span>
-      <span>{timeLeft}</span>
-    </div>
-  );
-}
 
 export default function App() {
   // Navigation active tab
@@ -1863,6 +1758,35 @@ export default function App() {
   const [newlyRegisteredUserEmail, setNewlyRegisteredUserEmail] = useState<string | null>(null);
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [timeTicker, setTimeTicker] = useState(Date.now());
+  const [countdownDisplay, setCountdownDisplay] = useState('');
+  React.useEffect(() => {
+    const tick = () => {
+      if (!customerSession) { setCountdownDisplay(''); return; }
+      const u = sptUsersList.find(x => x.email.toLowerCase() === customerSession.email.toLowerCase());
+      if (!u) { setCountdownDisplay(''); return; }
+      const { subscriptionStatus: st, subscriptionPlan: sp, subscriptionExpiresAt: se } = u;
+      const isTrial = st === 'trial';
+      if (!isTrial && st !== 'active') { setCountdownDisplay(''); return; }
+      if (sp === 'lifetime') { setCountdownDisplay('LIFETIME PACK ACTIVE'); return; }
+      if (!se) { setCountdownDisplay(''); return; }
+      const diff = new Date(se).getTime() - Date.now();
+      if (diff <= 0) {
+        setCountdownDisplay('Expired');
+        return;
+      }
+      const m = 86400000, h = 3600000, n = 60000, s = 1000;
+      const d = Math.floor(diff / m);
+      const hr = Math.floor((diff % m) / h);
+      const mi = Math.floor((diff % h) / n);
+      const sec = Math.floor((diff % n) / s);
+      const label = isTrial ? 'FREE TRIAL' : (sp ? sp.toUpperCase() + ' PACK' : 'ACTIVE');
+      const fmt = d > 0 ? `${d}D ${hr}H ${mi}M` : (hr > 0 ? `${hr}H ${mi}M ${sec}S` : `${mi}M ${sec}S`);
+      setCountdownDisplay(`${label} ACTIVE | ${fmt}`);
+    };
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [customerSession, sptUsersList]);
 
   // Admin Security 6-Digit PIN States
   const [adminPin, setAdminPinState] = useState<string>('000000');
@@ -2621,8 +2545,22 @@ export default function App() {
               <span className="text-amber-300 font-bold">{14 - 1 + liveOnlineCount}</span>
             </div>
           </div>
-          {customerSession && (
-            <ActivePlanCountdown email={customerSession.email} sptUsersList={sptUsersList} setSptUsersList={setSptUsersList} />
+          {countdownDisplay && (
+            <div className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-[10px] font-mono font-bold shadow-[0_0_12px_rgba(0,240,255,0.1)] select-none shrink-0 ${
+              countdownDisplay === 'Expired'
+                ? 'bg-rose-950/40 border border-rose-800/40 text-rose-300'
+                : 'bg-cyan-950/40 border border-cyan-800/40 text-cyan-300'
+            }`}>
+              <span className="relative flex h-2 w-2">
+                <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${
+                  countdownDisplay === 'Expired' ? 'bg-rose-400' : 'bg-[#00f0ff]'
+                }`}></span>
+                <span className={`relative inline-flex rounded-full h-2 w-2 ${
+                  countdownDisplay === 'Expired' ? 'bg-rose-400' : 'bg-[#00f0ff]'
+                }`}></span>
+              </span>
+              <span className="font-bold">{countdownDisplay}</span>
+            </div>
           )}
         </div>
       </header>
