@@ -4511,22 +4511,18 @@ export default function App() {
                     alert('Sadeep Pasindu Elite Console Unlocked! Admin tab is now visible in your navigation links bar.');
                   }
 
-                  // Sync profile to Supabase (reliably via server endpoint using service_role)
-                  try {
-                    await fetch('/api/admin/sync-profile', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({
-                        email: resolvedEmail,
-                        name: displayName,
-                        role: isMasterAdmin ? 'admin' : 'user',
-                        subscription_status: 'trial',
-                        subscription_expires_at: new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString(),
-                      }),
-                    });
-                  } catch (err) {
-                    console.error("Profile sync error (server):", err);
-                  }
+                  // Fire-and-forget profile sync (non-blocking, never delays redirect)
+                  fetch('/api/admin/sync-profile', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      email: resolvedEmail,
+                      name: displayName,
+                      role: isMasterAdmin ? 'admin' : 'user',
+                      subscription_status: 'trial',
+                      subscription_expires_at: new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString(),
+                    }),
+                  }).catch(err => console.error("Profile sync error (server):", err));
 
                   setShowLoginWall(false);
                   
@@ -4566,9 +4562,12 @@ export default function App() {
                     setPendingPlanCheckoutAfterLogin(null);
                   }
 
-                  // Redirect: both login and signup go to home (trial already active)
-                  console.log('[onSuccess] Redirecting to: home');
-                  setActiveTab('home');
+                  // Redirect: signup→plans, login→home (trial already active for both)
+                  if (isLoginFlow) {
+                    setActiveTab('home');
+                  } else {
+                    setActiveTab('plans');
+                  }
                 }}
               />
             </div>
