@@ -1758,35 +1758,25 @@ export default function App() {
   const [newlyRegisteredUserEmail, setNewlyRegisteredUserEmail] = useState<string | null>(null);
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [timeTicker, setTimeTicker] = useState(Date.now());
-  const [countdownDisplay, setCountdownDisplay] = useState('');
-  React.useEffect(() => {
-    const tick = () => {
-      if (!customerSession) { setCountdownDisplay(''); return; }
-      const u = sptUsersList.find(x => x.email.toLowerCase() === customerSession.email.toLowerCase());
-      if (!u) { setCountdownDisplay(''); return; }
-      const { subscriptionStatus: st, subscriptionPlan: sp, subscriptionExpiresAt: se } = u;
-      const isTrial = st === 'trial';
-      if (!isTrial && st !== 'active') { setCountdownDisplay(''); return; }
-      if (sp === 'lifetime') { setCountdownDisplay('LIFETIME PACK ACTIVE'); return; }
-      if (!se) { setCountdownDisplay(''); return; }
-      const diff = new Date(se).getTime() - Date.now();
-      if (diff <= 0) {
-        setCountdownDisplay('Expired');
-        return;
-      }
-      const m = 86400000, h = 3600000, n = 60000, s = 1000;
-      const d = Math.floor(diff / m);
-      const hr = Math.floor((diff % m) / h);
-      const mi = Math.floor((diff % h) / n);
-      const sec = Math.floor((diff % n) / s);
-      const label = isTrial ? 'FREE TRIAL' : (sp ? sp.toUpperCase() + ' PACK' : 'ACTIVE');
-      const fmt = d > 0 ? `${d}D ${hr}H ${mi}M` : (hr > 0 ? `${hr}H ${mi}M ${sec}S` : `${mi}M ${sec}S`);
-      setCountdownDisplay(`${label} ACTIVE | ${fmt}`);
-    };
-    tick();
-    const id = setInterval(tick, 1000);
-    return () => clearInterval(id);
-  }, [customerSession, sptUsersList]);
+  const countdownDisplay = React.useMemo(() => {
+    if (!customerSession) return '';
+    const u = sptUsersList.find(x => x.email.toLowerCase() === customerSession.email.toLowerCase());
+    if (!u) return '';
+    const { subscriptionStatus: st, subscriptionPlan: sp, subscriptionExpiresAt: se } = u;
+    const isTrial = st === 'trial';
+    if (!isTrial && st !== 'active') return '';
+    if (sp === 'lifetime') return 'LIFETIME PACK ACTIVE';
+    if (!se) return '';
+    const diff = new Date(se).getTime() - Date.now();
+    if (diff <= 0) return 'Expired';
+    const d = Math.floor(diff / 86400000);
+    const hr = Math.floor((diff % 86400000) / 3600000);
+    const mi = Math.floor((diff % 3600000) / 60000);
+    const sec = Math.floor((diff % 60000) / 1000);
+    const label = isTrial ? 'FREE TRIAL' : (sp ? sp.toUpperCase() + ' PACK' : 'ACTIVE');
+    const fmt = d > 0 ? `${d}D ${hr}H ${mi}M` : (hr > 0 ? `${hr}H ${mi}M ${sec}S` : `${mi}M ${sec}S`);
+    return `${label} ACTIVE | ${fmt}`;
+  }, [customerSession, sptUsersList, timeTicker]);
 
   // Admin Security 6-Digit PIN States
   const [adminPin, setAdminPinState] = useState<string>('000000');
