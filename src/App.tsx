@@ -1772,6 +1772,53 @@ export default function App() {
   const [customerSession, setCustomerSession] = useState<{ name: string; email: string } | null>(null);
   const [newlyRegisteredUserEmail, setNewlyRegisteredUserEmail] = useState<string | null>(null);
   const [showProfileModal, setShowProfileModal] = useState(false);
+  const [showActivatePlanBanner, setShowActivatePlanBanner] = useState(false);
+
+  // Auto-check and update expired paid plans to expired/trial status
+  const checkAndUpdateExpiredPlans = React.useCallback(() => {
+    setSptUsersList((prev: SptUser[]) => {
+      let updated = false;
+      const newList = prev.map(u => {
+        if (u.subscriptionStatus === 'active' && u.subscriptionExpiresAt) {
+          const expTime = new Date(u.subscriptionExpiresAt).getTime();
+          if (expTime <= Date.now()) {
+            updated = true;
+            return {
+              ...u,
+              subscriptionStatus: 'expired',
+              subscriptionPlan: undefined
+            };
+          }
+        }
+        return u;
+      });
+      return updated ? newList : prev;
+    });
+  }, []);
+
+  // Run expiry check on mount and every 30 seconds
+  React.useEffect(() => {
+    checkAndUpdateExpiredPlans();
+    const interval = setInterval(checkAndUpdateExpiredPlans, 30000);
+    return () => clearInterval(interval);
+  }, [checkAndUpdateExpiredPlans]);
+
+  // Check plan status on login and show activate banner if expired
+  React.useEffect(() => {
+    if (customerSession) {
+      const user = sptUsersList.find(u => u.email.toLowerCase() === customerSession.email.toLowerCase());
+      if (user) {
+        const status = getUserSubscriptionStatus(customerSession.email);
+        if (status.status === 'expired') {
+          setShowActivatePlanBanner(true);
+        } else {
+          setShowActivatePlanBanner(false);
+        }
+      }
+    } else {
+      setShowActivatePlanBanner(false);
+    }
+  }, [customerSession, sptUsersList]);
   const [timeTicker, setTimeTicker] = useState(Date.now());
   const countdownDisplay = React.useMemo(() => {
     if (!customerSession) return '';
@@ -2544,6 +2591,34 @@ export default function App() {
             )}
           </div>
         </nav>
+
+        {/* Activate Plan Banner - shows when user logged in but plan expired */}
+        {showActivatePlanBanner && (
+          <div className="flex items-center justify-center px-4 py-3 bg-rose-500/15 border border-rose-500/30 mx-4 -mt-2 rounded-xl animate-slideIn">
+            <div className="flex items-center gap-3">
+              <div className="flex items-center justify-center w-8 h-8 rounded-full bg-rose-500/20">
+                <AlertTriangle className="w-4 h-4 text-rose-400" />
+              </div>
+              <div>
+                <p className="text-sm font-bold text-rose-300">{t('ඔබගේ පැකේජය කාලාවාව අවසන් වී ඇත', 'Your plan has expired')}</p>
+                <p className="text-xs text-slate-400">{t('ප්‍රවේශය ලබා ගන්න නව පැකේජයක් සක්‍රීය කරන්න', 'Activate a new plan to regain access')}</p>
+              </div>
+              <button
+                onClick={() => { setActiveTab('plans'); setShowActivatePlanBanner(false); }}
+                className="ml-4 px-4 py-2 rounded-lg bg-rose-500 text-white text-xs font-bold uppercase tracking-wider hover:bg-rose-400 transition-all flex items-center gap-1"
+              >
+                {t('පැකේජය සක්‍රීය කරන්න', 'Activate Plan')} <ArrowRight className="w-3.5 h-3.5" />
+              </button>
+              <button
+                onClick={() => setShowActivatePlanBanner(false)}
+                className="ml-2 p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/5 transition"
+                title="Dismiss"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Stats bar: persistent marketing counters + real-time online */}
         <div className="flex flex-wrap items-center justify-center gap-2 px-2">
