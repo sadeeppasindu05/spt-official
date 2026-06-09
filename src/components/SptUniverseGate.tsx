@@ -359,12 +359,14 @@ export default function SptUniverseGate({ onClose, onSuccess, language = 'en', r
             setPassword('');
             if (!signInError && signInData.session && onSuccess) {
               onSuccess({ email: signInData.session.user.email || email });
-            } else {
-              setView('login');
+            } else if (onSuccess) {
+              // Sign-in failed but OTP is confirmed — still let user in
+              onSuccess({ email });
             }
           } catch {
             setPassword('');
-            setView('login');
+            // OTP is confirmed — still let user in even if Supabase sign-in fails
+            if (onSuccess) onSuccess({ email });
           }
         }
       } else {
