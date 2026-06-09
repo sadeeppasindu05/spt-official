@@ -4300,8 +4300,12 @@ export default function App() {
                     }
                   }
 
-                  // Auto-redirect to plans page after signup
-                  setActiveTab('plans');
+                  // Redirect: signup→plans (no password) or login→home (has password)
+                  if (userData.password) {
+                    setActiveTab('home');
+                  } else {
+                    setActiveTab('plans');
+                  }
                   // Increment display counters for marketing
                   setDisplayRegisteredCount(prev => prev + 1);
                   setDisplaySubscribedCount(prev => prev + 1);
@@ -4371,17 +4375,14 @@ export default function App() {
 
                   const hasActivePlan = resolvedStatus === 'active' || resolvedStatus === 'trial';
 
-                  if (!hasActivePlan) {
-                    if (pendingPlanCheckoutAfterLogin) {
-                      setSelectedPlanForPayment(pendingPlanCheckoutAfterLogin as any);
-                      const username = displayName || 'USER';
-                      const cleanName = username.toUpperCase().split(' ')[0].replace(/[^A-Z]/g, '');
-                      const randomSuffix = Math.floor(1000 + Math.random() * 9000);
-                      setGeneratedRefCode(`SPT-${cleanName}-${randomSuffix}`);
-                      setShowPaymentCheckout(true);
-                      setPendingPlanCheckoutAfterLogin(null);
-                    }
-                    setActiveTab('plans');
+                  if (!hasActivePlan && pendingPlanCheckoutAfterLogin) {
+                    setSelectedPlanForPayment(pendingPlanCheckoutAfterLogin as any);
+                    const username = displayName || 'USER';
+                    const cleanName = username.toUpperCase().split(' ')[0].replace(/[^A-Z]/g, '');
+                    const randomSuffix = Math.floor(1000 + Math.random() * 9000);
+                    setGeneratedRefCode(`SPT-${cleanName}-${randomSuffix}`);
+                    setShowPaymentCheckout(true);
+                    setPendingPlanCheckoutAfterLogin(null);
                   }
                 }}
               />
