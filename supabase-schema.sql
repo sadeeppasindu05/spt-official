@@ -370,4 +370,4 @@ ALTER PUBLICATION supabase_realtime ADD TABLE IF NOT EXISTS public.system_config
 ALTER PUBLICATION supabase_realtime ADD TABLE IF NOT EXISTS public.support_messages;
 ALTER PUBLICATION supabase_realtime ADD TABLE IF NOT EXISTS public.telemetry;
 ALTER PUBLICATION supabase_realtime ADD TABLE IF NOT EXISTS public.marketing_counters;
-ALTER PUBLICATION supabase_realtime ADD TABLE IF NOT EXISTS public.admins;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.admins;

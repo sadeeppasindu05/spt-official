@@ -20,7 +20,7 @@ CREATE POLICY "Only admins can insert admins." ON public.admins FOR INSERT WITH 
 CREATE POLICY "Only admins can update admins." ON public.admins FOR UPDATE USING (is_admin());
 CREATE POLICY "Only admins can delete admins." ON public.admins FOR DELETE USING (is_admin());
 
-ALTER PUBLICATION supabase_realtime ADD TABLE IF NOT EXISTS public.admins;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.admins;
 
 -- Insert default super admin if not exists
 INSERT INTO public.admins (name, email, role, is_active)
