@@ -1611,6 +1611,21 @@ export default function App() {
       }
       
       const userEmail = customerSession.email;
+      const currentUser = sptUsersList.find(u => u.email.toLowerCase() === userEmail.toLowerCase());
+      
+      // Check if user has active paid plan - prevent switching to trial
+      const hasActivePaidPlan = currentUser && 
+        currentUser.subscriptionStatus === 'active' && 
+        currentUser.subscriptionPlan && 
+        currentUser.subscriptionPlan !== 'trial' &&
+        currentUser.subscriptionExpiresAt &&
+        new Date(currentUser.subscriptionExpiresAt).getTime() > Date.now();
+      
+      if (hasActivePaidPlan) {
+        alert(t('ඔබට සාර්ථක සක්‍රීය වී ඇති ගෙවීම් පැකේජයක් ඇත. එය අවසන් වීමෙන් පස්සේ පමණක් නොමිලේ කාලය ලබා ගත හැක.', 'You have an active paid plan. Free trial can only be activated after it expires.'));
+        return;
+      }
+      
       setDisplaySubscribedCount(prev => prev + 1);
       setSptUsersList((prev: SptUser[]) => {
         const exists = prev.some(u => u.email.toLowerCase() === userEmail.toLowerCase());
@@ -2961,29 +2976,38 @@ export default function App() {
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6 max-w-6xl mx-auto text-left px-2">
-                {subscriptionPlans
-                  .filter((plan: any) => {
-                    const isTrialOrFree = plan.isFree || plan.id === 'plan_6' || plan.priceUsd === 0;
-                    if (isTrialOrFree && customerSession) {
-                      const uStatus = getUserSubscriptionStatus(customerSession.email);
-                      if (uStatus.status === 'expired') {
-                        return false;
-                      }
-                      const userObj = sptUsersList.find(u => u.email.toLowerCase() === customerSession.email.toLowerCase());
-                      if (userObj) {
-                        if (userObj.subscriptionStatus === 'expired') {
+                  {subscriptionPlans
+                    .filter((plan: any) => {
+                      const isTrialOrFree = plan.isFree || plan.id === 'plan_6' || plan.priceUsd === 0;
+                      if (isTrialOrFree && customerSession) {
+                        const uStatus = getUserSubscriptionStatus(customerSession.email);
+                        if (uStatus.status === 'expired') {
                           return false;
                         }
-                        if (userObj.subscriptionStatus === 'trial' && userObj.subscriptionExpiresAt) {
-                          const expTime = new Date(userObj.subscriptionExpiresAt).getTime();
-                          if (expTime <= Date.now()) {
+                        const userObj = sptUsersList.find(u => u.email.toLowerCase() === customerSession.email.toLowerCase());
+                        if (userObj) {
+                          if (userObj.subscriptionStatus === 'expired') {
+                            return false;
+                          }
+                          if (userObj.subscriptionStatus === 'trial' && userObj.subscriptionExpiresAt) {
+                            const expTime = new Date(userObj.subscriptionExpiresAt).getTime();
+                            if (expTime <= Date.now()) {
+                              return false;
+                            }
+                          }
+                          // Hide free trial if user has active paid plan
+                          const hasActivePaidPlan = userObj.subscriptionStatus === 'active' &&
+                            userObj.subscriptionPlan &&
+                            userObj.subscriptionPlan !== 'trial' &&
+                            userObj.subscriptionExpiresAt &&
+                            new Date(userObj.subscriptionExpiresAt).getTime() > Date.now();
+                          if (hasActivePaidPlan) {
                             return false;
                           }
                         }
                       }
-                    }
-                    return true;
-                  })
+                      return true;
+                    })
                   .map((plan: any) => (
                   <div key={plan.id} className="relative pt-6">
                     {(() => {
