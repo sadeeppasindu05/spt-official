@@ -5153,8 +5153,19 @@ export default function AdminConsole({
                       {/* Delete User */}
                       <button
                         type="button"
-                        onClick={() => {
+                        onClick={async () => {
                           if (confirm(`'${user.name}' පරිශීලකයාව පද්ධතියෙන් ඉවත් කිරීමට අවශ්‍ය බව ස්ථිරද?`)) {
+                            // Delete from Supabase (Auth + profiles)
+                            try {
+                              await fetch('/api/admin/delete-user', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ email: user.email, userId: user.id })
+                              });
+                            } catch (err) {
+                              console.error('Failed to delete from backend:', err);
+                            }
+                            // Remove from local state
                             if (setSptUsersList) {
                               setSptUsersList(prev => prev.filter(u => u.id !== user.id));
                             }

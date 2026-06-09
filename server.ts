@@ -929,6 +929,47 @@ async function startServer() {
     }
   });
 
+  // Admin delete user (Supabase Auth + profiles)
+  app.post("/api/admin/delete-user", requireAdmin, async (req, res) => {
+    try {
+      const { email, userId } = req.body;
+      if (!email) return res.status(400).json({ error: 'Email required' });
+
+      const supabaseUrl = getSupabaseUrl();
+      const serviceRole = getSupabaseServiceRole();
+      if (!supabaseUrl || !serviceRole) {
+        return res.status(500).json({ error: 'Supabase not configured' });
+      }
+
+      const supabaseAdmin = createClient(supabaseUrl, serviceRole, {
+        auth: { autoRefreshToken: false, persistSession: false },
+        realtime: { transport: ws }
+      });
+
+      // Delete from profiles table by email
+      const { error: profileError } = await supabaseAdmin
+        .from('profiles')
+        .delete()
+        .eq('email', email.toLowerCase());
+
+      if (profileError) {
+        console.error('Failed to delete profile:', profileError.message);
+      }
+
+      // Delete from Auth if userId provided
+      if (userId) {
+        const { error: authError } = await supabaseAdmin.auth.admin.deleteUser(userId);
+        if (authError) {
+          console.error('Failed to delete auth user:', authError.message);
+        }
+      }
+
+      res.json({ success: true, message: `User ${email} deleted` });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || 'Failed to delete user' });
+    }
+  });
+
   // Serve uploaded files statically
   const uploadsPath = path.join(process.cwd(), 'dist', 'uploads');
   if (fs.existsSync(uploadsPath)) {

@@ -1674,8 +1674,19 @@ export default function App() {
     }
   };
 
-  // Customer authentication session
-  const [customerSession, setCustomerSession] = useState<{ name: string; email: string } | null>(null);
+  // Customer authentication session (persisted to localStorage)
+  const [customerSession, setCustomerSession] = useState<{ name: string; email: string } | null>(() => {
+    const cached = localStorage.getItem('spt_customer_session');
+    return cached ? JSON.parse(cached) : null;
+  });
+  // Sync customerSession to localStorage
+  React.useEffect(() => {
+    if (customerSession) {
+      localStorage.setItem('spt_customer_session', JSON.stringify(customerSession));
+    } else {
+      localStorage.removeItem('spt_customer_session');
+    }
+  }, [customerSession]);
   const [newlyRegisteredUserEmail, setNewlyRegisteredUserEmail] = useState<string | null>(null);
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [timeTicker, setTimeTicker] = useState(Date.now());
@@ -4360,9 +4371,7 @@ export default function App() {
 
                   const hasActivePlan = resolvedStatus === 'active' || resolvedStatus === 'trial';
 
-                  if (hasActivePlan) {
-                    setActiveTab('home');
-                  } else {
+                  if (!hasActivePlan) {
                     if (pendingPlanCheckoutAfterLogin) {
                       setSelectedPlanForPayment(pendingPlanCheckoutAfterLogin as any);
                       const username = displayName || 'USER';
