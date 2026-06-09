@@ -351,21 +351,25 @@ export default function SptUniverseGate({ onClose, onSuccess, language = 'en', r
         const { data: pwData } = await supabase.auth.getSession();
         if (pwData.session) {
           setPassword('');
-          if (onSuccess) onSuccess({ email: pwData.session.user.email || email });
+          if (onSuccess) {
+            console.log('[OTP] Calling onSuccess WITH session, no password');
+            onSuccess({ email: pwData.session.user.email || email });
+          }
         } else {
           // No session — sign in with stored password
           try {
             const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({ email, password });
             setPassword('');
             if (!signInError && signInData.session && onSuccess) {
+              console.log('[OTP] signInWithPassword SUCCESS, calling onSuccess');
               onSuccess({ email: signInData.session.user.email || email });
             } else if (onSuccess) {
-              // Sign-in failed but OTP is confirmed — still let user in
+              console.log('[OTP] signInWithPassword failed (no session/error), still calling onSuccess');
               onSuccess({ email });
             }
           } catch {
             setPassword('');
-            // OTP is confirmed — still let user in even if Supabase sign-in fails
+            console.log('[OTP] signInWithPassword threw, calling onSuccess without password');
             if (onSuccess) onSuccess({ email });
           }
         }

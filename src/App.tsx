@@ -4278,7 +4278,7 @@ export default function App() {
                   setShowLoginWall(false);
                   setRecoveryMode(false);
                 }}
-                onSuccess={async (userData, isSignUp) => {
+                onSuccess={async (userData) => {
                   setRecoveryMode(false);
                   const resolvedEmail = userData.email.toLowerCase().trim();
                   const displayName = userData.name || resolvedEmail.split('@')[0];
@@ -4288,24 +4288,10 @@ export default function App() {
                     email: resolvedEmail
                   });
 
-                  // If this was a signup via OTP, sign the user into Supabase
-                  if (isSignUp && userData.password) {
-                    try {
-                      await supabase.auth.signInWithPassword({
-                        email: resolvedEmail,
-                        password: userData.password,
-                      });
-                    } catch (signInErr) {
-                      console.warn("Post-OTP sign-in deferred (user may need to log in manually):", signInErr);
-                    }
-                  }
+                  // userData.password present = login flow, absent = signup flow (OTP)
+                  const isLoginFlow = !!userData.password;
+                  console.log('[onSuccess] isLoginFlow:', isLoginFlow, 'password present:', !!userData.password, 'userData keys:', Object.keys(userData));
 
-                  // Redirect: signup→plans (no password) or login→home (has password)
-                  if (userData.password) {
-                    setActiveTab('home');
-                  } else {
-                    setActiveTab('plans');
-                  }
                   // Increment display counters for marketing
                   setDisplayRegisteredCount(prev => prev + 1);
                   setDisplaySubscribedCount(prev => prev + 1);
@@ -4383,6 +4369,14 @@ export default function App() {
                     setGeneratedRefCode(`SPT-${cleanName}-${randomSuffix}`);
                     setShowPaymentCheckout(true);
                     setPendingPlanCheckoutAfterLogin(null);
+                  }
+
+                  // Redirect at the VERY END: signup→plans, login→home
+                  console.log('[onSuccess] Redirecting to:', isLoginFlow ? 'home' : 'plans');
+                  if (isLoginFlow) {
+                    setActiveTab('home');
+                  } else {
+                    setActiveTab('plans');
                   }
                 }}
               />
