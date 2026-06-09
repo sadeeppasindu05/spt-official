@@ -11,7 +11,7 @@ import { SystemConfig, SptTool, ServiceItem, AccessoryBrand, OfferItem, HomeStat
 import { ImageCropperModal } from './ImageCropper';
 import { createBackup, downloadBackup, parseBackupFile, saveAutoBackupData, getAutoBackupData, getAutoBackupSettings, saveAutoBackupSettings, getIntervalMs, AutoBackupInterval, AutoBackupSettings } from '../utils/backup';
 import { uploadToSupabaseStorage } from '../utils/storage';
-import { supabase, supabaseAdmin } from '../supabaseClient';
+import { supabase } from '../supabaseClient';
 
 // Safe confirm dialog implementation for sandboxed environments
 const confirm = (msg: string): boolean => {
@@ -5145,15 +5145,15 @@ export default function AdminConsole({
                         type="button"
                         onClick={async () => {
                           if (confirm(`'${user.name}' පරිශීලකයාව පද්ධතියෙන් ඉවත් කිරීමට අවශ්‍ය බව ස්ථිරද?`)) {
-                            // Delete from Supabase Auth using service_role client
+                            // Delete from Supabase (Auth + profiles) via server endpoint
                             try {
-                              if (supabaseAdmin && user.id) {
-                                await supabaseAdmin.auth.admin.deleteUser(user.id);
-                              } else {
-                                console.warn('Cannot delete from Auth: supabaseAdmin not available');
-                              }
+                              await fetch('/api/admin/delete-user', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ email: user.email, userId: user.id })
+                              });
                             } catch (err) {
-                              console.error('Failed to delete from Auth:', err);
+                              console.error('Failed to delete from backend:', err);
                             }
                             // Remove from local state (triggers Supabase profiles delete via handleSetSptUsersList)
                             if (setSptUsersList) {
