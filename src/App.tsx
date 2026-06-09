@@ -2244,7 +2244,7 @@ export default function App() {
     const hasActivePlan = resolvedStatus === 'active' || resolvedStatus === 'trial';
 
     if (hasActivePlan) {
-      setActiveTab('home');
+      setActiveTab('tools');
     } else {
       if (pendingPlanCheckoutAfterLogin) {
         setSelectedPlanForPayment(pendingPlanCheckoutAfterLogin as any);
@@ -4624,12 +4624,12 @@ export default function App() {
                     setPendingPlanCheckoutAfterLogin(null);
                   }
 
-                  // Auto-select free plan for signup, then redirect to Plans
+                  // Auto-select free plan for signup, then redirect to Tools (free trial active)
                   if (!isLoginFlow) {
                     const fp = subscriptionPlans.find((p: any) => p.priceUsd === 0);
                     if (fp) setSelectedPlanIdInPlans(fp.id);
                   }
-                  setActiveTab(isLoginFlow ? 'home' : 'plans');
+                  setActiveTab('tools');
                 }}
               />
             </div>
