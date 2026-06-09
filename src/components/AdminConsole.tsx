@@ -11,7 +11,7 @@ import { SystemConfig, SptTool, ServiceItem, AccessoryBrand, OfferItem, HomeStat
 import { ImageCropperModal } from './ImageCropper';
 import { createBackup, downloadBackup, parseBackupFile, saveAutoBackupData, getAutoBackupData, getAutoBackupSettings, saveAutoBackupSettings, getIntervalMs, AutoBackupInterval, AutoBackupSettings } from '../utils/backup';
 import { uploadToSupabaseStorage } from '../utils/storage';
-import { supabase } from '../supabaseClient';
+import { supabase, supabaseAdmin } from '../supabaseClient';
 
 // Safe confirm dialog implementation for sandboxed environments
 const confirm = (msg: string): boolean => {
@@ -311,6 +311,8 @@ interface AdminConsoleProps {
   // Blogs list and registered users list
   blogsList?: BlogPost[];
   setBlogsList?: React.Dispatch<React.SetStateAction<BlogPost[]>>;
+  adminsList?: any[];
+  setAdminsList?: React.Dispatch<React.SetStateAction<any[]>>;
   sptUsersList?: SptUser[];
   setSptUsersList?: React.Dispatch<React.SetStateAction<SptUser[]>>;
 
@@ -360,6 +362,8 @@ export default function AdminConsole({
   setContactsList,
   blogsList = [],
   setBlogsList,
+  adminsList: propAdminsList,
+  setAdminsList,
   sptUsersList = [],
   setSptUsersList,
   subscriptionPlans: propSubscriptionPlans,
@@ -472,26 +476,6 @@ export default function AdminConsole({
     return () => window.removeEventListener('spt_support_messages_changed', syncFromSupabase);
   }, []);
 
-  const syncSupportToSupabase = async (tickets: any[]) => {
-    const isSupabaseReady = import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_ANON_KEY;
-    if (!isSupabaseReady) return;
-    try {
-      // Delete all existing and re-insert
-      await supabase.from('support_messages').delete().neq('id', 'none');
-      if (tickets.length > 0) {
-        const inserts = tickets.map(t => ({
-          id: t.id,
-          email: t.email,
-          message: t.message,
-          created_at: t.createdAt,
-          status: t.status || 'pending'
-        }));
-        await supabase.from('support_messages').insert(inserts);
-      }
-    } catch (err) {
-      console.error('Failed to sync support tickets to Supabase:', err);
-    }
-  };
 
   const handleToggleTicketStatus = async (ticketId: string) => {
     const ticket = supportTickets.find(t => t.id === ticketId);
@@ -691,11 +675,9 @@ export default function AdminConsole({
   const [newPayDetailsEn, setNewPayDetailsEn] = useState('');
   const [newPayType, setNewPayType] = useState('bank');
 
-  // Security Admins local state (persisted to localStorage)
-  const [adminUsers, setAdminUsers] = useState<any[]>([
-      { id: 'admin_1', name: 'Sadeep Pasindu', email: 'sadeeppasindu0218@gmail.com', role: 'superadmin', isActive: true },
-      { id: 'admin_2', name: 'Staff Assistant', email: 'support@spt.com', role: 'moderator', isActive: true }
-  ]);
+  // Security Admins managed via Supabase `admins` table
+  const adminUsers = propAdminsList || [];
+  const setAdminUsers = setAdminsList || ((fn: any) => {});
   const [newAdminEmail, setNewAdminEmail] = useState('');
   const [newAdminRole, setNewAdminRole] = useState('editor');
   const [adminRecoveryEmail, setAdminRecoveryEmail] = useState(config.adminRecoveryEmail || 'sadeeppasindu0218@gmail.com');
@@ -5163,17 +5145,17 @@ export default function AdminConsole({
                         type="button"
                         onClick={async () => {
                           if (confirm(`'${user.name}' පරිශීලකයාව පද්ධතියෙන් ඉවත් කිරීමට අවශ්‍ය බව ස්ථිරද?`)) {
-                            // Delete from Supabase (Auth + profiles)
+                            // Delete from Supabase Auth using service_role client
                             try {
-                              await fetch('/api/admin/delete-user', {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ email: user.email, userId: user.id })
-                              });
+                              if (supabaseAdmin && user.id) {
+                                await supabaseAdmin.auth.admin.deleteUser(user.id);
+                              } else {
+                                console.warn('Cannot delete from Auth: supabaseAdmin not available');
+                              }
                             } catch (err) {
-                              console.error('Failed to delete from backend:', err);
+                              console.error('Failed to delete from Auth:', err);
                             }
-                            // Remove from local state
+                            // Remove from local state (triggers Supabase profiles delete via handleSetSptUsersList)
                             if (setSptUsersList) {
                               setSptUsersList(prev => prev.filter(u => u.id !== user.id));
                             }

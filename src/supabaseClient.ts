@@ -22,3 +22,11 @@ export const supabase = createClient(finalUrl, finalKey, {
     detectSessionInUrl: true,
   },
 });
+
+// Admin client with service_role key for privileged operations (delete users from Auth, etc.)
+const serviceRoleKey = import.meta.env.VITE_SUPABASE_SERVICE_ROLE_KEY || '';
+export const supabaseAdmin = serviceRoleKey
+  ? createClient(finalUrl, serviceRoleKey, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    })
+  : null;

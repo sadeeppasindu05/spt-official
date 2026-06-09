@@ -114,7 +114,7 @@ export default function CustomerSupportChat({ language = 'en' }: CustomerSupport
     }
   };
 
-  // Submit Support Message Ticket directly to LocalStorage + dispatch event to keep AdminConsole synced dynamically
+  // Submit Support Message Ticket directly to Supabase + dispatch event to keep AdminConsole synced dynamically
   const handleSupportTicketSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formEmail.trim() || !formMessage.trim()) return;

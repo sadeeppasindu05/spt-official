@@ -11,31 +11,23 @@ export interface AutoBackupSettings {
   lastBackup: string | null;
 }
 
-const AUTO_BACKUP_KEY = 'spt_autobackup_settings';
-const AUTO_BACKUP_DATA_KEY = 'spt_autobackup_data';
+let autoBackupSettingsCache: AutoBackupSettings = { interval: 'off', lastBackup: null };
+let autoBackupDataCache: BackupData | null = null;
 
 export function getAutoBackupSettings(): AutoBackupSettings {
-  try {
-    const stored = localStorage.getItem(AUTO_BACKUP_KEY);
-    if (stored) return JSON.parse(stored);
-  } catch {}
-  return { interval: 'off', lastBackup: null };
+  return { ...autoBackupSettingsCache };
 }
 
 export function saveAutoBackupSettings(settings: AutoBackupSettings): void {
-  localStorage.setItem(AUTO_BACKUP_KEY, JSON.stringify(settings));
+  autoBackupSettingsCache = { ...settings };
 }
 
 export function saveAutoBackupData(backup: BackupData): void {
-  localStorage.setItem(AUTO_BACKUP_DATA_KEY, JSON.stringify(backup));
+  autoBackupDataCache = backup;
 }
 
 export function getAutoBackupData(): BackupData | null {
-  try {
-    const stored = localStorage.getItem(AUTO_BACKUP_DATA_KEY);
-    if (stored) return JSON.parse(stored);
-  } catch {}
-  return null;
+  return autoBackupDataCache ? { ...autoBackupDataCache } : null;
 }
 
 export function getIntervalMs(interval: AutoBackupInterval): number | null {

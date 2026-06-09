@@ -288,7 +288,7 @@ export default function App() {
     const fetchSupabaseData = async () => {
       const isSupabaseReady = import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_ANON_KEY;
       if (!isSupabaseReady) {
-        console.log("Supabase is not configured yet. Using localStorage / default lists.");
+        console.log("Supabase is not configured yet. Using default lists.");
         return;
       }
 
@@ -481,6 +481,19 @@ export default function App() {
           console.log("Gateways table not found or failed to load. Falling back to local/cached payment gateways.", gatewayFetchErr);
         }
 
+        // 12b. Fetch Admins
+        try {
+          const { data: adminsFetch } = await supabase.from('admins').select('*').order('created_at', { ascending: false });
+          if (adminsFetch && adminsFetch.length > 0) {
+            setAdminsList(adminsFetch.map((a: any) => ({
+              id: a.id, name: a.name, email: a.email,
+              role: a.role, isActive: a.is_active
+            })));
+          }
+        } catch (adminsFetchErr) {
+          console.log("Admins table not found or failed to load.", adminsFetchErr);
+        }
+
         // 13. Fetch System Configuration (Logo, Wallpapers, custom texts)
         try {
           const { data: configFetch } = await supabase.from('system_config').select('*');
@@ -608,6 +621,7 @@ export default function App() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'system_config' }, () => refetchTable('system_config'))
       .on('postgres_changes', { event: '*', schema: 'public', table: 'support_messages' }, () => refetchTable('support_messages'))
       .on('postgres_changes', { event: '*', schema: 'public', table: 'telemetry' }, () => refetchTable('telemetry'))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'admins' }, () => refetchTable('admins'))
       .subscribe();
 
     return () => {
@@ -718,6 +732,11 @@ export default function App() {
           if (data) {
             setSystemConfigMap(Object.fromEntries(data.map((item: any) => [item.key, item.value])));
           }
+          break;
+        }
+        case 'admins': {
+          const { data: adminsData } = await supabase.from('admins').select('*').order('created_at', { ascending: false });
+          if (adminsData) setAdminsList(adminsData);
           break;
         }
         case 'support_messages': {
@@ -1311,6 +1330,46 @@ export default function App() {
     });
   };
 
+  // 12a. Admins List wrappers
+  const handleSetAdminsList = async (updater: React.SetStateAction<any[]>) => {
+    setAdminsList(prev => {
+      const updated = typeof updater === 'function' ? updater(prev) : updater;
+      if (import.meta.env.VITE_SUPABASE_URL) {
+        const deleted = prev.filter(p => !updated.some(u => u.id === p.id));
+        deleted.forEach(async (d) => {
+          if (isUUID(d.id)) {
+            await supabase.from('admins').delete().eq('id', d.id);
+          }
+        });
+        updated.forEach(async (a) => {
+          const isNew = !isUUID(a.id);
+          if (isNew) {
+            const { data, error } = await supabase.from('admins').insert([{
+              name: a.name,
+              email: a.email,
+              role: a.role,
+              is_active: a.isActive
+            }]).select('*').single();
+            if (!error && data) {
+              setAdminsList(curr => curr.map(item => item.id === a.id ? { ...item, id: data.id } : item));
+            }
+          } else {
+            const p = prev.find(item => item.id === a.id);
+            if (p && JSON.stringify(p) !== JSON.stringify(a)) {
+              await supabase.from('admins').update({
+                name: a.name,
+                email: a.email,
+                role: a.role,
+                is_active: a.isActive
+              }).eq('id', a.id);
+            }
+          }
+        });
+      }
+      return updated;
+    });
+  };
+
   // 12. Dynamic Payment Gateways live sync wrappers
   const handleSetPaymentGatewaysList = async (updater: React.SetStateAction<any[]>) => {
     setPaymentGatewaysList(prev => {
@@ -1473,6 +1532,7 @@ export default function App() {
   ]);
 
   const [sptUsersList, setSptUsersList] = useState<SptUser[]>([]);
+  const [adminsList, setAdminsList] = useState<any[]>([]);
 
   // Fetch profiles from Supabase on mount + subscribe to realtime
   React.useEffect(() => {
@@ -1495,7 +1555,7 @@ export default function App() {
             profilePictureUrl: p.profile_picture_url || undefined,
           }));
           setSptUsersList(prev => {
-            // Merge: Supabase profiles override localStorage
+            // Merge: Supabase profiles override existing state
             const merged = [...mapped];
             for (const local of prev) {
               if (!merged.some(m => m.email.toLowerCase() === local.email.toLowerCase())) {
@@ -4216,6 +4276,8 @@ export default function App() {
                   setContactsList={handleSetContactsList}
                   blogsList={blogsList}
                   setBlogsList={handleSetBlogsList}
+                  adminsList={adminsList}
+                  setAdminsList={handleSetAdminsList}
                   sptUsersList={sptUsersList}
                   setSptUsersList={handleSetSptUsersList}
                   subscriptionPlans={subscriptionPlans}
