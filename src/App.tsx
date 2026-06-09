@@ -573,6 +573,24 @@ export default function App() {
             subscriptionExpiresAt: new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString()
           }, ...prev];
         });
+
+        // Upsert profile to Supabase (for Google OAuth / auto-signup paths)
+        try {
+          const { data: existingProfile } = await supabase.from('profiles').select('id').eq('id', session.user.id).maybeSingle();
+          if (!existingProfile) {
+            await supabase.from('profiles').upsert({
+              id: session.user.id,
+              email: email.toLowerCase(),
+              name,
+              role: email === 'sadeeppasindu0218@gmail.com' ? 'admin' : 'user',
+              subscription_status: 'trial',
+              subscription_expires_at: new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString(),
+              updated_at: new Date().toISOString()
+            }, { onConflict: 'id' });
+          }
+        } catch (err) {
+          console.error("Profile upsert error:", err);
+        }
       } else {
         setCustomerSession(null);
         setIsAdminUnlocked(false);
@@ -1383,36 +1401,80 @@ export default function App() {
         return JSON.parse(cached);
       } catch (err) {}
     }
-    return [
-      {
-        id: 'user_sadeep',
-        name: 'Sadeep',
-        email: 'sadeeppasindu0218@gmail.com',
-        registeredAt: new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString(),
-        subscriptionStatus: 'active',
-        subscriptionPlan: 'lifetime',
-        subscriptionExpiresAt: new Date(Date.now() + 3650 * 24 * 3600 * 1000).toISOString(),
-      },
-      {
-        id: 'u2',
-        name: 'John Supporter',
-        email: 'john@gmail.com',
-        registeredAt: new Date(Date.now() - 8 * 24 * 3600 * 1000).toISOString(),
-        subscriptionStatus: 'expired',
-        subscriptionPlan: 'weekly',
-        subscriptionExpiresAt: new Date(Date.now() - 1 * 24 * 3600 * 1000).toISOString()
-      },
-      {
-        id: 'u3',
-        name: 'Nimal Perera',
-        email: 'nimal@gmail.com',
-        registeredAt: new Date(Date.now() - 3 * 24 * 3600 * 1000).toISOString(),
-        subscriptionStatus: 'trial',
-        subscriptionExpiresAt: new Date(Date.now() + 4 * 24 * 3600 * 1000).toISOString()
-      }
-    ];
+    return [];
   });
 
+  // Fetch profiles from Supabase on mount + subscribe to realtime
+  React.useEffect(() => {
+    async function fetchProfiles() {
+      try {
+        const { data, error } = await supabase.from('profiles').select('*');
+        if (error) throw error;
+        if (data && data.length > 0) {
+          const mapped = data.map((p: any): SptUser => ({
+            id: p.id || `profile_${Date.now()}`,
+            name: p.name || p.email?.split('@')[0] || 'User',
+            email: p.email?.toLowerCase() || '',
+            registeredAt: p.created_at || new Date().toISOString(),
+            subscriptionStatus: p.subscription_status || 'trial',
+            subscriptionPlan: p.subscription_plan || undefined,
+            subscriptionExpiresAt: p.subscription_expires_at || undefined,
+            receiptUrl: p.receipt_url || undefined,
+            paymentReference: p.payment_reference || undefined,
+            paymentSubmittedAt: p.payment_submitted_at || undefined,
+            profilePictureUrl: p.profile_picture_url || undefined,
+          }));
+          setSptUsersList(prev => {
+            // Merge: Supabase profiles override localStorage
+            const merged = [...mapped];
+            for (const local of prev) {
+              if (!merged.some(m => m.email.toLowerCase() === local.email.toLowerCase())) {
+                merged.push(local);
+              }
+            }
+            return merged;
+          });
+        }
+      } catch (err) {
+        console.error('Error fetching profiles:', err);
+      }
+    }
+    fetchProfiles();
+    // Real-time subscription
+    const channel = supabase
+      .channel('profiles-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, (payload: any) => {
+        if (payload.new?.email) {
+          const p = payload.new;
+          const mapped: SptUser = {
+            id: p.id || `profile_${Date.now()}`,
+            name: p.name || p.email?.split('@')[0] || 'User',
+            email: p.email?.toLowerCase() || '',
+            registeredAt: p.created_at || new Date().toISOString(),
+            subscriptionStatus: p.subscription_status || 'trial',
+            subscriptionPlan: p.subscription_plan || undefined,
+            subscriptionExpiresAt: p.subscription_expires_at || undefined,
+            receiptUrl: p.receipt_url || undefined,
+            paymentReference: p.payment_reference || undefined,
+            paymentSubmittedAt: p.payment_submitted_at || undefined,
+            profilePictureUrl: p.profile_picture_url || undefined,
+          };
+          setSptUsersList(prev => {
+            const idx = prev.findIndex(u => u.email.toLowerCase() === mapped.email.toLowerCase());
+            if (idx >= 0) {
+              const updated = [...prev];
+              updated[idx] = { ...updated[idx], ...mapped };
+              return updated;
+            }
+            return [mapped, ...prev];
+          });
+        }
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, []);
+
+  // Sync sptUsersList to localStorage as cache
   React.useEffect(() => {
     localStorage.setItem('spt_users', JSON.stringify(sptUsersList));
   }, [sptUsersList]);
@@ -1502,6 +1564,21 @@ export default function App() {
     handleFetchLiveLkr();
   }, []);
 
+  // Sync user profile fields to Supabase profiles table
+  const syncProfileToSupabase = async (email: string, updates: Record<string, any>) => {
+    try {
+      const { data: profiles } = await supabase.from('profiles').select('id').eq('email', email.toLowerCase()).limit(1);
+      if (profiles && profiles.length > 0) {
+        await supabase.from('profiles').update({
+          ...updates,
+          updated_at: new Date().toISOString()
+        }).eq('id', profiles[0].id);
+      }
+    } catch (err) {
+      console.error("Profile sync error:", err);
+    }
+  };
+
   const handleFetchLiveLkr = async () => {
     setIsFetchingLkr(true);
     setHasCheckedLkr(true);
@@ -1561,6 +1638,8 @@ export default function App() {
           }, ...prev];
         }
       });
+      // Sync free trial to Supabase profiles
+      syncProfileToSupabase(userEmail, { subscription_status: 'trial', subscription_expires_at: new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString() });
       
       alert(t('දින 7ක නොමිලේ කාලය සාර්ථකව සක්‍රීය කරන ලදි! ඔබව මෙවලම් පිටුවට යොමු කෙරේ.', '7-Day Trial Activated successfully! Directing you to tools...'));
       setActiveTab('tools');
@@ -3431,6 +3510,13 @@ export default function App() {
                               return [...prev, newUserObj];
                             }
                           });
+                          syncProfileToSupabase(customerSession.email, {
+                            subscription_status: 'pending',
+                            subscription_plan: selectedPlanForPayment,
+                            payment_reference: generatedRefCode,
+                            receipt_url: uploadedReceiptB64,
+                            payment_submitted_at: new Date().toISOString()
+                          });
 
                           alert('ඔබගේ ගෙවීම් වාර්තාව සාර්ථකව Super Admin වෙත යොමු කරන ලදී!');
                         }}
@@ -4320,11 +4406,18 @@ export default function App() {
                     try {
                       const { data: { user } } = await supabase.auth.getUser();
                       if (user) {
+                        // Only set trial for NEW profiles (signup), not existing ones (login)
+                        const { data: existingProfile } = await supabase.from('profiles').select('id').eq('id', user.id).maybeSingle();
+                        const isNewProfile = !existingProfile;
                         await supabase.from('profiles').upsert({
                           id: user.id,
                           email: resolvedEmail,
                           name: displayName,
                           role: isMasterAdmin ? 'admin' : 'user',
+                          ...(isNewProfile ? {
+                            subscription_status: 'trial',
+                            subscription_expires_at: new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString(),
+                          } : {}),
                           updated_at: new Date().toISOString()
                         }, { onConflict: 'id' });
                       }
@@ -4626,6 +4719,13 @@ export default function App() {
                           };
                           return [...prev, newUserObj];
                         }
+                      });
+                      syncProfileToSupabase(customerSession.email, {
+                        subscription_status: 'pending',
+                        subscription_plan: selectedPlanForPayment,
+                        payment_reference: generatedRefCode,
+                        receipt_url: uploadedReceiptB64,
+                        payment_submitted_at: new Date().toISOString()
                       });
 
                       alert('ඔබගේ ගෙවීම් රිසිට්පත සාර්ථකව Super Admin වෙත යොමු කරන ලදී! \n\nReceipt verification request forwarded to Admin\'s email: sadeeppasindu0218@gmail.com\nAlso registered in Admin verification console log queue.');

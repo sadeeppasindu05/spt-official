@@ -5106,6 +5106,29 @@ export default function AdminConsole({
               };
 
               // Admin confirm handers
+              // Sync user profile fields to Supabase profiles table
+              const syncProfileToSupabaseLocal = async (email: string, updates: Record<string, any>) => {
+                try {
+                  // Look up user by email, then update their profile
+                  const { data: profiles } = await supabase.from('profiles').select('id').eq('email', email.toLowerCase()).limit(1);
+                  if (profiles && profiles.length > 0) {
+                    await supabase.from('profiles').update({
+                      ...updates,
+                      updated_at: new Date().toISOString()
+                    }).eq('id', profiles[0].id);
+                  } else {
+                    // Try via auth admin API through server
+                    await fetch('/api/admin/sync-profile', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ email: email.toLowerCase(), ...updates })
+                    });
+                  }
+                } catch (err) {
+                  console.error("Profile sync error:", err);
+                }
+              };
+
               const approveSubscription = (plan: 'weekly' | 'monthly' | '6months' | 'yearly' | 'lifetime') => {
                 if (!setSptUsersList) return;
                 
@@ -5128,6 +5151,12 @@ export default function AdminConsole({
                   }
                   return u;
                 }));
+                // Sync to Supabase profiles
+                syncProfileToSupabaseLocal(user?.email, {
+                  subscription_status: 'active',
+                  subscription_plan: plan,
+                  subscription_expires_at: expDate
+                });
                 alert(`පරිශීලක '${user.name}' සාර්ථකව ${plan.toUpperCase()} පැකේජය සදහා සක්‍රිය කරන ලදී! App approved successfully.`);
               };
 

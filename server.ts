@@ -930,6 +930,41 @@ async function startServer() {
   });
 
   // Admin delete user (Supabase Auth + profiles)
+  // Admin sync profile (upsert by email)
+  app.post("/api/admin/sync-profile", async (req, res) => {
+    try {
+      const { email, ...updates } = req.body;
+      if (!email) return res.status(400).json({ error: 'Email required' });
+
+      const supabaseUrl = getSupabaseUrl();
+      const serviceRole = getSupabaseServiceRole();
+      if (!supabaseUrl || !serviceRole) {
+        return res.status(500).json({ error: 'Supabase not configured' });
+      }
+
+      const supabaseAdmin = createClient(supabaseUrl, serviceRole, {
+        auth: { autoRefreshToken: false, persistSession: false },
+        realtime: { transport: ws }
+      });
+
+      // Find user by email in auth
+      const { data: userList } = await supabaseAdmin.auth.admin.listUsers();
+      const authUser = userList?.users?.find((u: any) => u.email?.toLowerCase() === email.toLowerCase());
+      if (!authUser) return res.status(404).json({ error: 'User not found in auth' });
+
+      await supabaseAdmin.from('profiles').upsert({
+        id: authUser.id,
+        email: email.toLowerCase(),
+        ...updates,
+        updated_at: new Date().toISOString()
+      }, { onConflict: 'id' });
+
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || 'Failed to sync profile' });
+    }
+  });
+
   app.post("/api/admin/delete-user", async (req, res) => {
     try {
       const { email, userId } = req.body;
