@@ -678,6 +678,7 @@ export default function AdminConsole({
   // Security Admins managed via Supabase `admins` table
   const adminUsers = propAdminsList || [];
   const setAdminUsers = setAdminsList || ((fn: any) => {});
+  const [newAdminName, setNewAdminName] = useState('');
   const [newAdminEmail, setNewAdminEmail] = useState('');
   const [newAdminRole, setNewAdminRole] = useState('editor');
   const [adminRecoveryEmail, setAdminRecoveryEmail] = useState(config.adminRecoveryEmail || 'sadeeppasindu0218@gmail.com');
