@@ -1596,6 +1596,26 @@ export default function App() {
     }
   };
 
+  // Simple opacity fix without regex - uses split/join to avoid regex parsing
+  const fixOpacity = (str: string) => str
+    .split(' o5').join('/5')
+    .split(' o10').join('/10')
+    .split(' o15').join('/15')
+    .split(' o20').join('/20')
+    .split(' o25').join('/25')
+    .split(' o30').join('/30')
+    .split(' o40').join('/40')
+    .split(' o50').join('/50')
+    .split(' o60').join('/60')
+    .split(' o80').join('/80')
+    .split(' o90').join('/90');
+
+  // Pre-built classNames to avoid regex parsing issues in JSX
+  const fetchLkrBtnClassName = `inline-flex rounded-full bg-cyan-950 o40 border border-cyan-800 o50 py-3.5 px-8 cursor-pointer items-center justify-center gap-3 shadow-[0_0_25px_rgba(8,145,178,0.3)] hover:bg-cyan-900 o60 hover:shadow-[0_0_35px_rgba(8,145,178,0.5)] hover:-translate-y-1 transition-all duration-300`
+    .split(' o40').join('/40')
+    .split(' o50').join('/50')
+    .split(' o60').join('/60');
+
   const handleFetchLiveLkr = async () => {
     setIsFetchingLkr(true);
     setHasCheckedLkr(true);
@@ -3114,101 +3134,107 @@ export default function App() {
                       }
                       return true;
                     })
-                  .map((plan: any) => (
-                  <div key={plan.id} className="relative pt-6">
-                    {(() => {
-                      const cu = customerSession ? sptUsersList.find(u => u.email.toLowerCase() === customerSession.email.toLowerCase()) : null;
-                      let isCurrentPlan = false;
-                      if (cu && (cu.subscriptionStatus === 'trial' || cu.subscriptionStatus === 'active')) {
-                        const hasRealPlan = cu.subscriptionPlan && cu.subscriptionPlan !== 'trial';
-                        if (hasRealPlan) {
-                          const planCodeMap: Record<string, string> = { weekly: 'plan_1', monthly: 'plan_2', '6months': 'plan_3', yearly: 'plan_4', lifetime: 'plan_5' };
-                          isCurrentPlan = plan.id === planCodeMap[cu.subscriptionPlan!];
-                        } else {
-                          isCurrentPlan = plan.priceUsd === 0;
-                        }
+                  .map((plan: any) => {
+                    const cu = customerSession ? sptUsersList.find(u => u.email.toLowerCase() === customerSession.email.toLowerCase()) : null;
+                    let isCurrentPlan = false;
+                    if (cu && (cu.subscriptionStatus === 'trial' || cu.subscriptionStatus === 'active')) {
+                      const hasRealPlan = cu.subscriptionPlan && cu.subscriptionPlan !== 'trial';
+                      if (hasRealPlan) {
+                        const planCodeMap: Record<string, string> = { weekly: 'plan_1', monthly: 'plan_2', '6months': 'plan_3', yearly: 'plan_4', lifetime: 'plan_5' };
+                        isCurrentPlan = plan.id === planCodeMap[cu.subscriptionPlan!];
+                      } else {
+                        isCurrentPlan = plan.priceUsd === 0;
                       }
-                      return isCurrentPlan ? (
-                        <div className="absolute -top-0 left-1/2 -translate-x-1/2 bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-3 py-0.5 rounded-full text-[9px] font-bold tracking-widest shadow-[0_0_10px_rgba(16,185,129,0.2)] z-30 whitespace-nowrap">
-                          {t('ඔබේ වත්මන් පැකේජය', 'YOUR CURRENT PLAN')}
-                        </div>
-                      ) : null;
-                    })()}
-                    <div 
-                      onClick={() => {
-                        if (isCurrentPlan) return;
-                        handleSelectPlanAction(plan);
-                      }}
-                      className={`glass-panel p-6 rounded-3xl flex flex-col items-center justify-between space-y-6 transition-all duration-500 text-center relative group hover:-translate-y-4 hover:scale-105 ${
-                        isCurrentPlan
-                          ? 'opacity-60 cursor-not-allowed'
-                          : selectedPlanIdInPlans === plan.id 
-                            ? 'border-[#00f0ff] bg-cyan-950/25 shadow-[0_0_25px_rgba(0,240,255,0.25)]'
-                            : 'border-white/10 hover:border-cyan-400/50 hover:shadow-[0_20px_50px_-10px_rgba(34,211,238,0.4)]'
-                      } ${isCurrentPlan ? '' : 'hover:-translate-y-4 hover:scale-105'} shadow-[0_10px_30px_-15px_rgba(0,0,0,0.8)] ${isCurrentPlan ? 'cursor-not-allowed' : 'cursor-pointer'} transform-gpu bg-gradient-to-b from-slate-800/80 to-[#0a0a16]`}
-                    >
-                      <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-cyan-400/10 to-transparent blur-2xl pointer-events-none group-hover:from-cyan-400/20 transition-all duration-500" />
-                      
-                      <div className="space-y-4 relative z-10 w-full text-center">
-                        <div className="relative">
-                          <h3 className="text-[12px] font-mono font-black uppercase text-cyan-400 tracking-widest drop-shadow-sm group-hover:text-cyan-300 transition-colors">
-                            {plan.title.replace(' PACK', '')} {t('පැකේජය', 'PACK')}
-                          </h3>
-                          {plan.discountTag && (
-                            <div className="absolute -top-3 -right-2 bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-2.5 py-0.5 rounded-full text-[9px] font-bold tracking-widest shadow-[0_0_10px_rgba(16,185,129,0.2)] animate-pulse">
-                              {plan.discountTag ? t(plan.discountTag, plan.discountTagEn || plan.discountTag) : null}
-                            </div>
-                          )}
-                        </div>
-                        <div className="relative inline-block w-full text-center py-4">
-                          {plan.priceUsd > 0 && plan.originalPriceUsd && plan.originalPriceUsd > plan.priceUsd && (
-                            <span className="absolute -top-2 md:-top-0 right-10 md:right-2 text-base text-rose-500 font-mono font-bold opacity-90 flex items-center justify-center">
-                              <span className="relative inline-block">
-                                <span className="absolute top-1/2 left-0 w-full h-[3px] bg-rose-500 transform -translate-y-1/2 -rotate-12 shadow-[0_0_8px_rgba(244,63,94,0.8)]"></span>
-                                ${plan.originalPriceUsd}
-                              </span>
-                            </span>
-                          )}
-                          <h4 className="text-5xl lg:text-6xl font-display font-extrabold text-white tracking-tighter w-full relative z-10 drop-shadow-[0_2px_10px_rgba(255,255,255,0.2)] group-hover:drop-shadow-[0_5px_15px_rgba(255,255,255,0.4)] transition-all">
-                            {plan.priceUsd === 0 ? t('FREE', 'FREE') : `$${plan.priceUsd}`}
-                          </h4>
-                          {hasCheckedLkr && plan.priceUsd > 0 && (
-                            <div className="text-xs font-mono font-bold text-amber-300 mt-2.5 animate-pulse relative z-10">
-                              ~ Rs. {(plan.priceUsd * liveLkrRate).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} LKR
-                            </div>
-                          )}
-                        </div>
-                        <p className="text-[10px] sm:text-xs text-slate-400/90 leading-relaxed font-sans mt-2 min-h-[40px] px-2 w-full flex items-center justify-center font-medium group-hover:text-slate-300 transition-colors">
-                          {t(plan.durationLabel, plan.durationLabel)}
-                        </p>
-                      </div>
-
-                      <div className="w-full mt-auto relative z-10">
-                        <button
-                          onClick={(e) => {
-                             e.stopPropagation();
-                             handleSelectPlanAction(plan);
+                    }
+                    const isSelected = selectedPlanIdInPlans === plan.id;
+                    // Pre-build all classNames as plain string vars to avoid regex parsing issues
+                    const cardBase = 'glass-panel p-6 rounded-3xl flex flex-col items-center justify-between space-y-6 transition-all duration-500 text-center relative group transform-gpu bg-gradient-to-b from-slate-800 to-[#0a0a16]';
+                    const cardState = isCurrentPlan ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer';
+                    const cardSelect = isSelected
+                      ? 'border-[#00f0ff] bg-cyan-950 o25 shadow-[0_0_25px_rgba(0,240,255,0.25)]'
+                      : 'border-white o10 hover:border-cyan-400 o50 hover:shadow-[0_20px_50px_-10px_rgba(34,211,238,0.4)]';
+                    const cardHover = isCurrentPlan ? '' : 'hover:-translate-y-4 hover:scale-105';
+                    const cardShadow = 'shadow-[0_10px_30px_-15px_rgba(0,0,0,0.8)]';
+                    const cardCursor = isCurrentPlan ? 'cursor-not-allowed' : 'cursor-pointer';
+                    const cardClassName = fixOpacity([cardBase, cardState, cardSelect, cardHover, cardShadow, cardCursor].filter(Boolean).join(' '));
+                    const btnSelected = 'bg-[#00f0ff] text-slate-950 border-cyan-400 font-black shadow-[#00f0ff] o20';
+                    const btnDefault = 'bg-white o5 border border-white o20 text-slate-200 group-hover:bg-cyan-500 o20 group-hover:text-cyan-100 group-hover:border-cyan-400 o50';
+                    const btnStr = 'w-full py-3.5 rounded-2xl text-[11px] font-mono font-bold uppercase tracking-widest transition-all duration-300 cursor-pointer shadow-lg active:scale-95 ' + (isSelected ? btnSelected : btnDefault);
+                    const btnClassName = fixOpacity(btnStr);
+                    const badgeClassName = fixOpacity('absolute -top-0 left-1/2 -translate-x-1/2 bg-emerald-500 o20 text-emerald-400 border border-emerald-500 o30 px-3 py-0.5 rounded-full text-[9px] font-bold tracking-widest shadow-[0_0_10px_rgba(16,185,129,0.2)] z-30 whitespace-nowrap');
+                    const decorationClassName = fixOpacity('absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-cyan-400 o10 to-transparent blur-2xl pointer-events-none group-hover:from-cyan-400 o20 transition-all duration-500');
+                    const discountTagClassName = fixOpacity('absolute -top-3 -right-2 bg-emerald-500 o20 text-emerald-400 border border-emerald-500 o30 px-2.5 py-0.5 rounded-full text-[9px] font-bold tracking-widest shadow-[0_0_10px_rgba(16,185,129,0.2)] animate-pulse');
+                    return (
+                      <div key={plan.id} className="relative pt-6">
+                        {isCurrentPlan ? (
+                          <div className={badgeClassName}>
+                            {t('ඔබේ වත්මන් පැකේජය', 'YOUR CURRENT PLAN')}
+                          </div>
+                        ) : null}
+                        <div
+                          onClick={() => {
+                            if (isCurrentPlan) return;
+                            handleSelectPlanAction(plan);
                           }}
-                          className={`w-full py-3.5 rounded-2xl text-[11px] font-mono font-bold uppercase tracking-widest transition-all duration-300 cursor-pointer shadow-lg active:scale-95 ${
-                            selectedPlanIdInPlans === plan.id 
-                              ? 'bg-[#00f0ff] text-slate-950 border-cyan-400 font-black shadow-[#00f0ff]/20'
-                              : 'bg-white/5 border border-white/20 text-slate-200 group-hover:bg-cyan-500/20 group-hover:text-cyan-100 group-hover:border-cyan-400/50'
-                          }`}
+                          className={cardClassName}
                         >
-                           {selectedPlanIdInPlans === plan.id ? t('SELECTED PLAN', 'SELECTED PLAN') : t('SELECT PLAN', 'SELECT PLAN')}
-                        </button>
+                          <div className={decorationClassName} />
+                          <div className="space-y-4 relative z-10 w-full text-center">
+                            <div className="relative">
+                              <h3 className="text-[12px] font-mono font-black uppercase text-cyan-400 tracking-widest drop-shadow-sm group-hover:text-cyan-300 transition-colors">
+                                {plan.title.replace(' PACK', '')} {t('පැකේජය', 'PACK')}
+                              </h3>
+                              {plan.discountTag && (
+                                <div className={discountTagClassName}>
+                                  {plan.discountTag ? t(plan.discountTag, plan.discountTagEn || plan.discountTag) : null}
+                                </div>
+                              )}
+                            </div>
+                            <div className="relative inline-block w-full text-center py-4">
+                              {plan.priceUsd > 0 && plan.originalPriceUsd && plan.originalPriceUsd > plan.priceUsd && (
+                                <span className="absolute -top-2 md:-top-0 right-10 md:right-2 text-base text-rose-500 font-mono font-bold opacity-90 flex items-center justify-center">
+                                  <span className="relative inline-block">
+                                    <span className="absolute top-1/2 left-0 w-full h-[3px] bg-rose-500 transform -translate-y-1/2 -rotate-12 shadow-[0_0_8px_rgba(244,63,94,0.8)]"></span>
+                                    ${plan.originalPriceUsd}
+                                  </span>
+                                </span>
+                              )}
+                              <h4 className="text-5xl lg:text-6xl font-display font-extrabold text-white tracking-tighter w-full relative z-10 drop-shadow-[0_2px_10px_rgba(255,255,255,0.2)] group-hover:drop-shadow-[0_5px_15px_rgba(255,255,255,0.4)] transition-all">
+                                {plan.priceUsd === 0 ? t('FREE', 'FREE') : `$${plan.priceUsd}`}
+                              </h4>
+                              {hasCheckedLkr && plan.priceUsd > 0 && (
+                                <div className="text-xs font-mono font-bold text-amber-300 mt-2.5 animate-pulse relative z-10">
+                                  ~ Rs. {(plan.priceUsd * liveLkrRate).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} LKR
+                                </div>
+                              )}
+                            </div>
+                            <p className="text-[10px] sm:text-xs text-slate-400/90 leading-relaxed font-sans mt-2 min-h-[40px] px-2 w-full flex items-center justify-center font-medium group-hover:text-slate-300 transition-colors">
+                              {t(plan.durationLabel, plan.durationLabel)}
+                            </p>
+                          </div>
+                          <div className="w-full mt-auto relative z-10">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleSelectPlanAction(plan);
+                              }}
+                              className={btnClassName}
+                            >
+                              {isSelected ? t('SELECTED PLAN', 'SELECTED PLAN') : t('SELECT PLAN', 'SELECT PLAN')}
+                            </button>
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                  </div>
-                ))}
+                    );
+                  })}
               </div>
 
               <div className="pt-8">
-                 <button
-                    onClick={handleFetchLiveLkr}
-                    className="inline-flex rounded-full bg-cyan-950/40 border border-cyan-800/50 py-3.5 px-8 cursor-pointer items-center justify-center gap-3 shadow-[0_0_25px_rgba(8,145,178,0.3)] hover:bg-cyan-900/60 hover:shadow-[0_0_35px_rgba(8,145,178,0.5)] hover:-translate-y-1 transition-all duration-300"
-                    disabled={isFetchingLkr}
-                 >
+                  <button
+                     onClick={handleFetchLiveLkr}
+                     className={fetchLkrBtnClassName}
+                     disabled={isFetchingLkr}
+                  >
                     <RefreshCw className={`w-5 h-5 text-cyan-400 ${isFetchingLkr ? 'animate-spin' : 'animate-spin-slow'}`} />
                     <span className="text-xs font-mono font-bold text-amber-300 uppercase tracking-widest pl-1">
                       {isFetchingLkr 
@@ -3223,12 +3249,12 @@ export default function App() {
                 <motion.div
                   initial={{ opacity: 0, y: 15 }}
                   animate={{ opacity: 1, y: 0 }}
-                  className="max-w-2xl mx-auto glass rounded-3xl p-6 text-left border border-[#00f0ff]/30 mt-8 relative overflow-hidden shadow-2xl bg-gradient-to-br from-slate-950/90 to-slate-900/90"
+                  className={`max-w-2xl mx-auto glass rounded-3xl p-6 text-left border border-[#00f0ff] o30 mt-8 relative overflow-hidden shadow-2xl bg-gradient-to-br from-slate-950 o90 to-slate-900 o90`.replace(/o30/g, '/30').replace(/o90/g, '/90')}
                 >
-                  <div className="absolute top-0 right-0 w-32 h-32 bg-cyan-500/5 blur-2xl rounded-full" />
+                  <div className={`absolute top-0 right-0 w-32 h-32 bg-cyan-500 o5 blur-2xl rounded-full`.replace(/o5/g, '/5')} />
                   
                   <div className="flex items-center gap-3.5 mb-5">
-                    <div className="w-10 h-10 rounded-xl bg-cyan-500/10 border border-cyan-400/20 flex items-center justify-center text-cyan-300">
+                    <div className={`w-10 h-10 rounded-xl bg-cyan-500 o10 border border-cyan-400 o20 flex items-center justify-center text-cyan-300`.replace(/o10/g, '/10').replace(/o20/g, '/20')}>
                       <RefreshCw className={`w-5 h-5 ${isFetchingLkr ? 'animate-spin' : ''}`} />
                     </div>
                     <div>
@@ -3237,7 +3263,7 @@ export default function App() {
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pb-4 border-b border-white/5">
+                  <div className={`grid grid-cols-1 md:grid-cols-2 gap-4 pb-4 border-b border-white o5`.replace(/o5/g, '/5')}>
                     {(() => {
                       const selectedPlan = subscriptionPlans.find((p: any) => p.id === selectedPlanIdInPlans) || subscriptionPlans[0];
                       if (!selectedPlan) return null;
@@ -3248,20 +3274,20 @@ export default function App() {
 
                       return (
                         <>
-                          <div className="space-y-2 bg-black/40 p-4 rounded-2xl border border-white/5">
+                          <div className={`space-y-2 bg-black o40 p-4 rounded-2xl border border-white o5`.replace(/o40/g, '/40').replace(/o5/g, '/5')}>
                             <span className="text-[9px] font-mono leading-none text-slate-500 uppercase tracking-widest block">Selected Plan</span>
                             <div className="flex justify-between items-center">
                               <span className="text-sm font-bold text-white uppercase font-display">{t(selectedPlan.title, selectedPlan.title)}</span>
-                              <span className="text-xs bg-emerald-500/15 text-emerald-400 font-mono px-2 py-0.5 rounded font-black">{selectedPlan.discountTag || 'ACTIVE'}</span>
+                              <span className={`text-xs bg-emerald-500 o15 text-emerald-400 font-mono px-2 py-0.5 rounded font-black`.replace(/o15/g, '/15')}>{selectedPlan.discountTag || 'ACTIVE'}</span>
                             </div>
                             <p className="text-[11px] text-slate-400 leading-normal">{t(selectedPlan.durationLabel, selectedPlan.durationLabel)}</p>
-                            <div className="pt-2 flex justify-between items-end border-t border-white/5">
+                            <div className={`pt-2 flex justify-between items-end border-t border-white o5`.replace(/o5/g, '/5')}>
                               <span className="text-[10px] font-mono text-slate-500">Plan Cost (USD):</span>
                               <span className="text-lg font-bold text-white font-mono">${selectedPlan.priceUsd} USD</span>
                             </div>
                           </div>
 
-                          <div className="space-y-2 bg-cyan-950/20 p-4 rounded-2xl border border-cyan-500/10 flex flex-col justify-between">
+                          <div className={`space-y-2 bg-cyan-950 o20 p-4 rounded-2xl border border-cyan-500 o10 flex flex-col justify-between`.replace(/o20/g, '/20').replace(/o10/g, '/10')}>
                             <div>
                               <span className="text-[9px] font-mono leading-none text-[#00f0ff] uppercase tracking-widest block font-bold">LKR Live Price (ලංකා රුපියල් මිල)</span>
                               <div className="flex items-baseline gap-1 mt-1.5 font-sans">
@@ -3278,8 +3304,8 @@ export default function App() {
 
                             </div>
                             
-                            {selectedPlan.priceUsd > 0 && selectedPlan.originalPriceUsd && (
-                              <div className="pt-2 border-t border-white/5 text-[10px] font-mono space-y-1">
+                             {selectedPlan.priceUsd > 0 && selectedPlan.originalPriceUsd && (
+                               <div className={`pt-2 border-t border-white o5 text-[10px] font-mono space-y-1`.replace(/o5/g, '/5')}>
                                 <div className="flex justify-between text-slate-500">
                                   <span>Original LKR:</span>
                                   <span className="line-through">Rs. {computedLkrOriginal}</span>
@@ -3329,7 +3355,7 @@ export default function App() {
                           setShowPaymentCheckout(true);
                         }
                       }}
-                      className="whitespace-nowrap px-6 py-3 rounded-xl bg-gradient-to-r from-amber-500 to-yellow-600 hover:from-amber-600 hover:to-yellow-700 text-slate-950 font-bold font-mono text-[10px] uppercase tracking-widest shadow-lg shadow-yellow-500/10 cursor-pointer active:scale-95 transition flex items-center justify-center gap-1.5"
+                       className={`whitespace-nowrap px-6 py-3 rounded-xl bg-gradient-to-r from-amber-500 to-yellow-600 hover:from-amber-600 hover:to-yellow-700 text-slate-950 font-bold font-mono text-[10px] uppercase tracking-widest shadow-lg shadow-yellow-500 o10 cursor-pointer active:scale-95 transition flex items-center justify-center gap-1.5`.replace(/o10/g, '/10')}
                     >
                       PROCEED TO PAYMENT <ChevronRight className="w-3.5 h-3.5" />
                     </button>
@@ -3351,22 +3377,22 @@ export default function App() {
             >
               {/* Guarded Gate if user not logged in */}
               {!customerSession ? (
-                <div className="max-w-lg mx-auto p-12 rounded-3xl bg-[#03020b]/80 border-2 border-cyan-500/20 shadow-[0_0_50px_rgba(0,240,255,0.07)] text-center relative overflow-hidden my-12 backdrop-blur-xl">
+                <div className={`max-w-lg mx-auto p-12 rounded-3xl bg-[#03020b] o80 border-2 border-cyan-500 o20 shadow-[0_0_50px_rgba(0,240,255,0.07)] text-center relative overflow-hidden my-12 backdrop-blur-xl`.replace(/o80/g, '/80').replace(/o20/g, '/20')}>
                   {/* Space Ambient Background Accents */}
-                  <div className="absolute top-0 right-0 w-48 h-48 bg-gradient-to-br from-cyan-500/25 to-blue-600/5 blur-3xl rounded-full -translate-y-12 translate-x-12" />
-                  <div className="absolute -bottom-12 -left-12 w-48 h-48 bg-fuchsia-500/10 blur-3xl rounded-full" />
+                  <div className={`absolute top-0 right-0 w-48 h-48 bg-gradient-to-br from-cyan-500 o25 to-blue-600 o5 blur-3xl rounded-full -translate-y-12 translate-x-12`.replace(/o25/g, '/25').replace(/o5/g, '/5')} />
+                  <div className={`absolute -bottom-12 -left-12 w-48 h-48 bg-fuchsia-500 o10 blur-3xl rounded-full`.replace(/o10/g, '/10')} />
                   
                   {/* Custom animated security gateway frame */}
                   <div className="relative w-24 h-24 mx-auto mb-8 flex items-center justify-center font-sans">
-                    <div className="absolute inset-0 rounded-full bg-cyan-400/10 border-2 border-[#00f0ff]/30 animate-pulse" />
-                    <div className="absolute inset-2 rounded-full border border-dashed border-[#00f0ff]/40 animate-spin" style={{ animationDuration: '15s', transformOrigin: 'center' }} />
-                    <div className="relative w-16 h-16 rounded-full bg-gradient-to-b from-[#0e0c21] to-[#04030a] border border-[#00f0ff]/50 flex items-center justify-center shadow-lg shadow-cyan-500/25 z-10">
+                    <div className={`absolute inset-0 rounded-full bg-cyan-400 o10 border-2 border-[#00f0ff] o30 animate-pulse`.replace(/o10/g, '/10').replace(/o30/g, '/30')} />
+                    <div className={`absolute inset-2 rounded-full border border-dashed border-[#00f0ff] o40 animate-spin`.replace(/o40/g, '/40')} style={{ animationDuration: '15s', transformOrigin: 'center' }} />
+                    <div className={`relative w-16 h-16 rounded-full bg-gradient-to-b from-[#0e0c21] to-[#04030a] border border-[#00f0ff] o50 flex items-center justify-center shadow-lg shadow-cyan-500 o25 z-10`.replace(/o50/g, '/50').replace(/o25/g, '/25')}>
                       <Lock className="w-6 h-6 text-[#00f0ff]" />
                     </div>
                   </div>
                   
                   {/* Glowing custom label */}
-                  <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#00f0ff]/10 border border-[#00f0ff]/20 text-[10px] uppercase tracking-widest text-[#00f0ff] font-mono font-bold mb-4">
+                  <div className={`inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#00f0ff] o10 border border-[#00f0ff] o20 text-[10px] uppercase tracking-widest text-[#00f0ff] font-mono font-bold mb-4`.replace(/o10/g, '/10').replace(/o20/g, '/20')}>
                     <span className="w-1.5 h-1.5 rounded-full bg-[#00f0ff] animate-ping" />
                     {t('ප්‍රවේශය සීමා කර ඇත', 'Access Restricted')}
                   </div>
