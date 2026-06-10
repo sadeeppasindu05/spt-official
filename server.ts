@@ -18,14 +18,6 @@ const ADMIN_AUTH_TOKEN = process.env.ADMIN_API_TOKEN || crypto.randomBytes(32).t
 let adminProvidedApiKeys: Record<string, string> = {};
 let _aiClients: Record<string, GoogleGenAI> = {};
 
-interface CustomAiModel {
-  id: string;
-  name: string;
-  apiKey: string;
-  isActive: boolean;
-}
-
-let customAiModels: CustomAiModel[] = [];
 
 function requireAdmin(req: express.Request, res: express.Response, next: express.NextFunction) {
   const authHeader = req.headers.authorization;
@@ -407,19 +399,28 @@ async function startServer() {
     res.json({ configured: !!process.env.ADMIN_API_TOKEN });
   });
 
+  async function getAiModels() {
+    const supabaseUrl = getSupabaseUrl();
+    const serviceRole = getSupabaseServiceRole();
+    if (!supabaseUrl || !serviceRole) return [];
+    const sb = createClient(supabaseUrl, serviceRole);
+    const { data } = await sb.from('ai_models').select('id, name, is_active').order('created_at', { ascending: true });
+    return (data || []).map(m => ({ id: m.id, name: m.name, isActive: m.is_active }));
+  }
+
   // Protected: AI status (requires admin token)
-  app.get("/api/ai/status", requireAdmin, (req, res) => {
+  app.get("/api/ai/status", requireAdmin, async (req, res) => {
     res.json({
       configured: {
         chat: !!(adminProvidedApiKeys['chat'] || process.env.GEMINI_API_KEY),
         tools: !!(adminProvidedApiKeys['tools'] || process.env.GEMINI_API_KEY)
       },
-      customModels: customAiModels.map(m => ({ id: m.id, name: m.name, isActive: m.isActive }))
+      customModels: await getAiModels()
     });
   });
 
   // Protected: AI configure (requires admin token)
-  app.post("/api/ai/configure", requireAdmin, (req, res) => {
+  app.post("/api/ai/configure", requireAdmin, async (req, res) => {
     const { apiKey, feature } = req.body;
     const targetFeature = feature || 'chat';
     
@@ -437,35 +438,34 @@ async function startServer() {
         chat: !!(adminProvidedApiKeys['chat'] || process.env.GEMINI_API_KEY),
         tools: !!(adminProvidedApiKeys['tools'] || process.env.GEMINI_API_KEY)
       },
-      customModels: customAiModels.map(m => ({ id: m.id, name: m.name, isActive: m.isActive }))
+      customModels: await getAiModels()
     });
   });
 
   // Protected: Custom models (requires admin token)
-  app.post("/api/ai/custom-models", requireAdmin, (req, res) => {
+  app.post("/api/ai/custom-models", requireAdmin, async (req, res) => {
     const { action, id, name, apiKey, isActive } = req.body;
-    
+    const supabaseUrl = getSupabaseUrl();
+    const serviceRole = getSupabaseServiceRole();
+    if (!supabaseUrl || !serviceRole) return res.status(500).json({ success: false, error: 'Supabase not configured' });
+    const sb = createClient(supabaseUrl, serviceRole);
+
     if (action === 'add') {
-      const newId = `model_${Date.now()}`;
-      customAiModels.push({ id: newId, name, apiKey, isActive: true });
+      await sb.from('ai_models').insert({ name, api_key: apiKey, is_active: true });
     } else if (action === 'edit') {
-      const model = customAiModels.find(m => m.id === id);
-      if (model) {
-        if (name !== undefined) model.name = name;
-        if (apiKey !== undefined && apiKey !== '') model.apiKey = apiKey;
-      }
+      const updates: Record<string, any> = {};
+      if (name !== undefined) updates.name = name;
+      if (apiKey !== undefined && apiKey !== '') updates.api_key = apiKey;
+      await sb.from('ai_models').update(updates).eq('id', id);
     } else if (action === 'delete') {
-      customAiModels = customAiModels.filter(m => m.id !== id);
+      await sb.from('ai_models').delete().eq('id', id);
     } else if (action === 'toggleActive') {
-      const model = customAiModels.find(m => m.id === id);
-      if (model) {
-        model.isActive = isActive;
-      }
+      await sb.from('ai_models').update({ is_active: isActive }).eq('id', id);
     }
 
     res.json({ 
       success: true, 
-      customModels: customAiModels.map(m => ({ id: m.id, name: m.name, isActive: m.isActive }))
+      customModels: await getAiModels()
     });
   });
 

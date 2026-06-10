@@ -371,3 +371,62 @@ ALTER PUBLICATION supabase_realtime ADD TABLE IF NOT EXISTS public.support_messa
 ALTER PUBLICATION supabase_realtime ADD TABLE IF NOT EXISTS public.telemetry;
 ALTER PUBLICATION supabase_realtime ADD TABLE IF NOT EXISTS public.marketing_counters;
 ALTER PUBLICATION supabase_realtime ADD TABLE public.admins;
+
+-- 18. Storage Buckets for Images
+INSERT INTO storage.buckets (id, name, public, avif_autodetection)
+VALUES ('avatars', 'avatars', true, false),
+       ('receipts', 'receipts', true, false),
+       ('cms-images', 'cms-images', true, false)
+ON CONFLICT (id) DO NOTHING;
+
+-- Allow public access to storage objects
+DROP POLICY IF EXISTS "Public Access avatars" ON storage.objects;
+DROP POLICY IF EXISTS "Public Access receipts" ON storage.objects;
+DROP POLICY IF EXISTS "Public Access cms-images" ON storage.objects;
+CREATE POLICY "Public Access avatars" ON storage.objects FOR SELECT USING (bucket_id = 'avatars');
+CREATE POLICY "Public Access receipts" ON storage.objects FOR SELECT USING (bucket_id = 'receipts');
+CREATE POLICY "Public Access cms-images" ON storage.objects FOR SELECT USING (bucket_id = 'cms-images');
+CREATE POLICY "Insert avatars" ON storage.objects FOR INSERT WITH CHECK (bucket_id = 'avatars' AND auth.role() = 'authenticated');
+CREATE POLICY "Insert receipts" ON storage.objects FOR INSERT WITH CHECK (bucket_id = 'receipts' AND auth.role() = 'authenticated');
+CREATE POLICY "Insert cms-images" ON storage.objects FOR INSERT WITH CHECK (bucket_id = 'cms-images' AND is_admin());
+CREATE POLICY "Delete avatars" ON storage.objects FOR DELETE USING (bucket_id = 'avatars' AND auth.role() = 'authenticated');
+CREATE POLICY "Delete receipts" ON storage.objects FOR DELETE USING (bucket_id = 'receipts' AND auth.role() = 'authenticated');
+CREATE POLICY "Delete cms-images" ON storage.objects FOR DELETE USING (bucket_id = 'cms-images' AND is_admin());
+
+-- 19. Marketing Counters: add online_count column
+ALTER TABLE public.marketing_counters ADD COLUMN IF NOT EXISTS online_count integer default 14;
+
+-- 20. AI Custom Models
+CREATE TABLE IF NOT EXISTS public.ai_models (
+  id uuid default gen_random_uuid() primary key,
+  name text not null,
+  api_key text not null,
+  is_active boolean default true,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null,
+  updated_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
+ALTER TABLE public.ai_models ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "AI models are viewable by admins only." ON public.ai_models FOR SELECT USING (is_admin());
+CREATE POLICY "Only admins can insert ai_models." ON public.ai_models FOR INSERT WITH CHECK (is_admin());
+CREATE POLICY "Only admins can update ai_models." ON public.ai_models FOR UPDATE USING (is_admin());
+CREATE POLICY "Only admins can delete ai_models." ON public.ai_models FOR DELETE USING (is_admin());
+
+ALTER PUBLICATION supabase_realtime ADD TABLE IF NOT EXISTS public.ai_models;
+
+-- 21. Backups table for auto-backup persistence
+CREATE TABLE IF NOT EXISTS public.backups (
+  id uuid default gen_random_uuid() primary key,
+  data jsonb not null,
+  label text default '',
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
+ALTER TABLE public.backups ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Backups are viewable by admins only." ON public.backups FOR SELECT USING (is_admin());
+CREATE POLICY "Only admins can insert backups." ON public.backups FOR INSERT WITH CHECK (is_admin());
+CREATE POLICY "Only admins can delete backups." ON public.backups FOR DELETE USING (is_admin());
+
+ALTER PUBLICATION supabase_realtime ADD TABLE IF NOT EXISTS public.backups;

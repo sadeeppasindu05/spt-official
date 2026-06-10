@@ -15,6 +15,7 @@ import AdminConsole from './components/AdminConsole';
 import CustomerSupportChat from './components/CustomerSupportChat';
 import SptUniverseGate from './components/SptUniverseGate';
 import { supabase } from './supabaseClient';
+import { uploadBase64ToBucket, deleteFromSupabaseStorage, BUCKETS } from './utils/storage';
 
 export function getYouTubeEmbedId(url: string | undefined): string | null {
   if (!url) return null;
@@ -1902,8 +1903,16 @@ export default function App() {
 
   // Admin Security 6-Digit PIN States
   const [adminPin, setAdminPinState] = useState<string>('000000');
-  const setAdminPin = (newPin: string) => {
+  const setAdminPin = async (newPin: string) => {
     setAdminPinState(newPin);
+    try {
+      await supabase.from('system_config').upsert(
+        { key: 'admin_pin_hash', value: newPin },
+        { onConflict: 'key' }
+      );
+    } catch (err) {
+      console.error('Failed to save admin PIN to Supabase:', err);
+    }
   };
   const [isAdminPinVerified, setIsAdminPinVerified] = useState(false);
   const [showAdminPinPrompt, setShowAdminPinPrompt] = useState(false);
@@ -1915,6 +1924,13 @@ export default function App() {
       setTimeTicker(Date.now());
     }, 1000);
     return () => clearInterval(timer);
+  }, []);
+
+  // Load admin PIN from Supabase system_config on mount
+  React.useEffect(() => {
+    supabase.from('system_config').select('value').eq('key', 'admin_pin_hash').maybeSingle().then(({ data }) => {
+      if (data?.value) setAdminPinState(data.value);
+    }).catch(() => {});
   }, []);
 
   // Synchronize plans selection dynamically to user subscription status
@@ -3675,31 +3691,32 @@ export default function App() {
                                 type="file" 
                                 accept="image/*" 
                                 className="hidden" 
-                                onChange={async (e) => {
-                                  const file = e.target.files?.[0];
-                                  if (file) {
-                                    const reader = new FileReader();
-                                    reader.onloadend = () => {
-                                      setUploadedReceiptB64(reader.result as string);
-                                    };
-                                    reader.readAsDataURL(file);
-                                  }
-                                }} 
-                              />
-                            </label>
-                          </button>
-                        </div>
-                        {uploadedReceiptB64 && (
-                          <div className="pt-2 animate-fadeIn">
-                            <span className="block text-[9px] text-slate-400 font-mono mb-1">Receipt Preview (රිසිට්පත් පෙරදසුන):</span>
-                            <img 
-                              src={uploadedReceiptB64} 
-                              alt="slip preview" 
-                              className="max-h-52 max-w-full object-contain rounded-xl border border-white/10" 
-                              referrerPolicy="no-referrer"
-                            />
-                          </div>
-                        )}
+                                 onChange={async (e) => {
+                                   const file = e.target.files?.[0];
+                                   if (!file) return;
+                                   const reader = new FileReader();
+                                   reader.onloadend = async () => {
+                                     const b64 = reader.result as string;
+                                     const url = await uploadBase64ToBucket(b64, BUCKETS.receipts, customerSession.email);
+                                     setUploadedReceiptB64(url || b64);
+                                   };
+                                   reader.readAsDataURL(file);
+                                 }} 
+                               />
+                             </label>
+                           </button>
+                         </div>
+                         {uploadedReceiptB64 && (
+                           <div className="pt-2 animate-fadeIn">
+                             <span className="block text-[9px] text-slate-400 font-mono mb-1">Receipt Preview (රිසිට්පත් පෙරදසුන):</span>
+                             <img 
+                               src={uploadedReceiptB64} 
+                               alt="slip preview" 
+                               className="max-h-52 max-w-full object-contain rounded-xl border border-white/10" 
+                               referrerPolicy="no-referrer"
+                             />
+                           </div>
+                         )}
                       </div>
 
                       {/* Confirm button */}
@@ -4870,36 +4887,37 @@ export default function App() {
                     >
                       <label className="cursor-pointer">
                         Select File
-                        <input 
-                          type="file" 
-                          accept="image/*" 
-                          className="hidden" 
-                          onChange={async (e) => {
-                            const file = e.target.files?.[0];
-                            if (file) {
-                              const reader = new FileReader();
-                              reader.onloadend = () => {
-                                setUploadedReceiptB64(reader.result as string);
-                              };
-                              reader.readAsDataURL(file);
-                            }
-                          }} 
-                        />
-                      </label>
-                    </button>
-                  </div>
+                         <input 
+                           type="file" 
+                           accept="image/*" 
+                           className="hidden" 
+                           onChange={async (e) => {
+                             const file = e.target.files?.[0];
+                             if (!file) return;
+                             const reader = new FileReader();
+                             reader.onloadend = async () => {
+                               const b64 = reader.result as string;
+                               const url = await uploadBase64ToBucket(b64, BUCKETS.receipts, customerSession.email);
+                               setUploadedReceiptB64(url || b64);
+                             };
+                             reader.readAsDataURL(file);
+                           }} 
+                         />
+                       </label>
+                     </button>
+                   </div>
 
-                  {uploadedReceiptB64 && (
-                    <div className="pt-2 border border-white/5 p-2 bg-black/20 rounded-xl">
-                      <span className="block text-[9px] text-slate-400 font-mono mb-1">Receipt Preview (රිසිට්පත් පෙරදසුන):</span>
-                      <img 
-                        src={uploadedReceiptB64} 
-                        alt="slip preview" 
-                        className="max-h-40 max-w-full object-contain rounded-lg border border-white/10 mx-auto" 
-                        referrerPolicy="no-referrer"
-                      />
-                    </div>
-                  )}
+                   {uploadedReceiptB64 && (
+                     <div className="pt-2 border border-white/5 p-2 bg-black/20 rounded-xl">
+                       <span className="block text-[9px] text-slate-400 font-mono mb-1">Receipt Preview (රිසිට්පත් පෙරදසුන):</span>
+                       <img 
+                         src={uploadedReceiptB64} 
+                         alt="slip preview" 
+                         className="max-h-40 max-w-full object-contain rounded-lg border border-white/10 mx-auto" 
+                         referrerPolicy="no-referrer"
+                       />
+                     </div>
+                   )}
                 </div>
 
               </div>
@@ -5179,22 +5197,32 @@ export default function App() {
                               type="file"
                               accept="image/*"
                               className="hidden"
-                              onChange={(e) => {
+                              onChange={async (e) => {
                                 const file = e.target.files?.[0];
-                                if (file) {
-                                  const reader = new FileReader();
-                                  reader.onloadend = () => {
-                                    const b64 = reader.result as string;
-                                    setSptUsersList(prev => prev.map(u => {
-                                      if (u.email.toLowerCase() === customerSession.email.toLowerCase()) {
-                                        return { ...u, profilePictureUrl: b64 };
-                                      }
-                                      return u;
-                                    }));
-                                    alert('පැතිකඩ ඡායාරූපය සාර්ථකව උඩුගත කරන ලදී! (Profile image uploaded!)');
-                                  };
-                                  reader.readAsDataURL(file);
-                                }
+                                if (!file) return;
+                                const reader = new FileReader();
+                                reader.onloadend = async () => {
+                                  const b64 = reader.result as string;
+                                  const email = customerSession.email.toLowerCase();
+                                  const currentUser = sptUsersList.find(u => u.email.toLowerCase() === email);
+                                  const oldUrl = currentUser?.profilePictureUrl;
+                                  if (oldUrl && oldUrl.includes('supabase')) {
+                                    await deleteFromSupabaseStorage(oldUrl, BUCKETS.avatars);
+                                  }
+                                  const publicUrl = await uploadBase64ToBucket(b64, BUCKETS.avatars, email);
+                                  const newUrl = publicUrl || b64;
+                                  setSptUsersList(prev => prev.map(u => {
+                                    if (u.email.toLowerCase() === email) {
+                                      return { ...u, profilePictureUrl: newUrl };
+                                    }
+                                    return u;
+                                  }));
+                                  if (publicUrl) {
+                                    await syncProfileToSupabase(email, { profile_picture_url: publicUrl });
+                                  }
+                                  alert('පැතිකඩ ඡායාරූපය සාර්ථකව උඩුගත කරන ලදී! (Profile image uploaded!)');
+                                };
+                                reader.readAsDataURL(file);
                               }}
                             />
                           </label>
@@ -5202,17 +5230,23 @@ export default function App() {
                           {currentUserConfig?.profilePictureUrl && (
                             <button
                               type="button"
-                              onClick={() => {
-                                if (confirm('ඔබට ඔබගේ පැතිකඩ ඡායාරූපය ඉවත් කර සාමාන්‍ය රූපය සැකසීමට අවශ්‍යද? (Remove custom photo?)')) {
-                                  setSptUsersList(prev => prev.map(u => {
-                                    if (u.email.toLowerCase() === customerSession.email.toLowerCase()) {
-                                      const { profilePictureUrl, ...rest } = u;
-                                      return rest;
-                                    }
-                                    return u;
-                                  }));
-                                  alert('පැතිකඩ ඡායාරූපය සාර්ථකව ඉවත් කරන ලදී. (Profile custom image removed.)');
+                              onClick={async () => {
+                                if (!confirm('ඔබට ඔබගේ පැතිකඩ ඡායාරූපය ඉවත් කර සාමාන්‍ය රූපය සැකසීමට අවශ්‍යද? (Remove custom photo?)')) return;
+                                const email = customerSession.email.toLowerCase();
+                                const currentUser = sptUsersList.find(u => u.email.toLowerCase() === email);
+                                const oldUrl = currentUser?.profilePictureUrl;
+                                if (oldUrl && oldUrl.includes('supabase')) {
+                                  await deleteFromSupabaseStorage(oldUrl, BUCKETS.avatars);
                                 }
+                                setSptUsersList(prev => prev.map(u => {
+                                  if (u.email.toLowerCase() === email) {
+                                    const { profilePictureUrl, ...rest } = u;
+                                    return rest;
+                                  }
+                                  return u;
+                                }));
+                                await syncProfileToSupabase(email, { profile_picture_url: null });
+                                alert('පැතිකඩ ඡායාරූපය සාර්ථකව ඉවත් කරන ලදී. (Profile custom image removed.)');
                               }}
                               className="px-3 py-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 text-[10px] font-mono tracking-wider text-rose-400 uppercase transition cursor-pointer"
                             >
