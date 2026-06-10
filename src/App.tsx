@@ -65,7 +65,7 @@ export default function App() {
     return () => clearInterval(timer);
   }, []);
 
-  // Live online visitor count (heartbeat + polling)
+  // Live counters (heartbeat + polling) — syncs online, registered, subscribed every 30s
   React.useEffect(() => {
     const ping = async () => {
       try {
@@ -74,6 +74,8 @@ export default function App() {
         if (res && res.ok) {
           const data = await res.json();
           setLiveOnlineCount(data.count || 0);
+          if (data.registered != null) setDisplayRegisteredCount(data.registered);
+          if (data.subscribed != null) setDisplaySubscribedCount(data.subscribed);
         }
       } catch {}
     };
@@ -673,7 +675,6 @@ export default function App() {
           if (data) {
             if (data.registered_count != null) setDisplayRegisteredCount(data.registered_count);
             if (data.subscribed_count != null) setDisplaySubscribedCount(data.subscribed_count);
-            if (data.online_count != null) setLiveOnlineCount(data.online_count);
           }
           break;
         }
@@ -2812,7 +2813,7 @@ export default function App() {
             <div className="flex items-center gap-1.5 text-slate-300">
               <Activity className="w-3 h-3 text-amber-400" />
               <span>{t('මාර්ගගත', 'Online')}:</span>
-              <span className="text-amber-300 font-bold">{liveOnlineCount || 14}</span>
+              <span className="text-amber-300 font-bold">{14 + liveOnlineCount}</span>
             </div>
           </div>
           {countdownDisplay && (

@@ -1084,12 +1084,22 @@ async function startServer() {
     } catch {}
   }
 
-  // Online visitor heartbeat + count
+  // Online visitor heartbeat + count (also returns marketing counters for live sync)
   app.get("/api/online/count", async (req, res) => {
     const ip = getClientIp(req);
     onlineVisitors.set(ip, Date.now());
     await persistOnlineCount();
-    res.json({ count: onlineVisitors.size, online: onlineVisitors.size });
+    let registered = 592, subscribed = 370;
+    try {
+      const supabaseUrl = getSupabaseUrl();
+      const serviceRole = getSupabaseServiceRole();
+      if (supabaseUrl && serviceRole) {
+        const sb = createClient(supabaseUrl, serviceRole, { auth: { autoRefreshToken: false, persistSession: false }, realtime: { transport: ws } });
+        const { data: mc } = await sb.from('marketing_counters').select('registered_count, subscribed_count').eq('id', 'global').single();
+        if (mc) { if (mc.registered_count != null) registered = mc.registered_count; if (mc.subscribed_count != null) subscribed = mc.subscribed_count; }
+      }
+    } catch {}
+    res.json({ count: onlineVisitors.size, online: onlineVisitors.size, registered, subscribed });
   });
 
   app.post("/api/online/heartbeat", async (req, res) => {
