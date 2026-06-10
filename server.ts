@@ -10,6 +10,7 @@ import https from "https";
 import http from "http";
 import fs from "fs";
 import ws from "ws";
+import { Pool } from "pg";
 
 dotenv.config();
 
@@ -1078,6 +1079,83 @@ async function startServer() {
     onlineVisitors.set(ip, Date.now());
     await persistOnlineCount();
     res.json({ success: true });
+  });
+
+  // Apply pending SQL migrations to Supabase DB
+  app.post("/api/admin/apply-migrations", async (req, res) => {
+    const regions = ['us-east-1', 'us-west-1', 'eu-west-1', 'eu-central-1', 'ap-southeast-1', 'ap-northeast-1', 'ap-southeast-2', 'sa-east-1', 'ca-central-1'];
+    const password = process.env.DB_PASSWORD || "iQzlOrjiToiSCd00";
+    const projectRef = "wrhqguwubtxgtwtoeuqx";
+    const sqlPath = path.join(process.cwd(), 'supabase-schema.sql');
+    let sql: string;
+    try {
+      sql = fs.readFileSync(sqlPath, 'utf8');
+    } catch {
+      return res.status(500).json({ error: 'supabase-schema.sql not found' });
+    }
+    const errors: string[] = [];
+    let connected = false;
+    let lastError = '';
+    for (const region of regions) {
+      try {
+        const pool = new Pool({
+          connectionString: `postgresql://postgres.${projectRef}:${password}@aws-0-${region}.pooler.supabase.com:5432/postgres`,
+          max: 1,
+          connectionTimeoutMillis: 5000,
+        });
+        const client = await pool.connect();
+        await client.query('SELECT 1');
+        connected = true;
+        const statements = sql
+          .split(';')
+          .map(s => s.trim())
+          .filter(s => s.length > 0 && !s.startsWith('--'));
+        let executed = 0;
+        for (const stmt of statements) {
+          try {
+            await client.query(stmt);
+            executed++;
+          } catch (stmtErr: any) {
+            errors.push(`Statement ${executed + 1}: ${stmtErr.message}`);
+          }
+        }
+        client.release();
+        await pool.end();
+        return res.json({
+          success: true,
+          region,
+          totalStatements: statements.length,
+          executed,
+          errors: errors.length > 0 ? errors : undefined,
+          message: `Connected via ${region}. Executed ${executed}/${statements.length} statements.`,
+        });
+      } catch (err: any) {
+        lastError = err.message;
+      }
+    }
+    if (!connected) {
+      return res.status(500).json({
+        error: 'Could not connect to any region',
+        lastError,
+        triedRegions: regions,
+        passwordFirstChar: password[0],
+        passwordLastChar: password[password.length - 1],
+        hint: 'Check the region in Supabase Dashboard → Project Settings → Database. Try setting DB_PASSWORD env var if different.',
+      });
+    }
+  });
+
+  // Get profile pic URL from system_config
+  app.get("/api/profile/pic", async (req, res) => {
+    try {
+      const email = (req.query.email as string)?.toLowerCase();
+      if (!email) return res.status(400).json({ error: 'Email required' });
+      const sb = createClient(getSupabaseUrl(), getSupabaseServiceRole() || '', { auth: { autoRefreshToken: false, persistSession: false } });
+      const { data } = await sb.from('system_config').select('value').eq('key', `profile_pic:${email}`).maybeSingle();
+      res.json({ email, url: data?.value || null });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
   });
 
   // System health check

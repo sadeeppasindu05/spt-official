@@ -1741,7 +1741,7 @@ export default function App() {
         return;
       }
       
-      supabase.rpc('increment_counter', { counter_type: 'subscribed' }).then(({ data }) => { if (data) setDisplaySubscribedCount(data); });
+      supabase.rpc('increment_counter', { counter_type: 'subscribed' }).then(({ data, error }) => { if (error) { supabase.from('marketing_counters').select('subscribed_count').eq('id', 'global').single().then(({ data: c }) => { if (c) { const nv = (c.subscribed_count || 0) + 1; supabase.from('marketing_counters').update({ subscribed_count: nv }).eq('id', 'global'); setDisplaySubscribedCount(nv); } }); } else if (data) setDisplaySubscribedCount(data); });
       setSptUsersList((prev: SptUser[]) => {
         const exists = prev.some(u => u.email.toLowerCase() === userEmail.toLowerCase());
         const expDate = new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString();
@@ -3828,7 +3828,7 @@ export default function App() {
                             return;
                           }
                           
-                          supabase.rpc('increment_counter', { counter_type: 'subscribed' }).then(({ data }) => { if (data) setDisplaySubscribedCount(data); });
+                          supabase.rpc('increment_counter', { counter_type: 'subscribed' }).then(({ data, error }) => { if (error) { supabase.from('marketing_counters').select('subscribed_count').eq('id', 'global').single().then(({ data: c }) => { if (c) { const nv = (c.subscribed_count || 0) + 1; supabase.from('marketing_counters').update({ subscribed_count: nv }).eq('id', 'global'); setDisplaySubscribedCount(nv); } }); } else if (data) setDisplaySubscribedCount(data); });
                           // update user
                           setSptUsersList(prev => {
                             const exists = prev.some(u => u.email.toLowerCase() === customerSession.email.toLowerCase());
@@ -4732,8 +4732,8 @@ export default function App() {
                   console.log('[onSuccess] isLoginFlow:', isLoginFlow, 'password present:', !!userData.password, 'userData keys:', Object.keys(userData));
 
                   // Increment display counters for marketing
-                  supabase.rpc('increment_counter', { counter_type: 'registered' }).then(({ data }) => { if (data) setDisplayRegisteredCount(data); });
-                  supabase.rpc('increment_counter', { counter_type: 'subscribed' }).then(({ data }) => { if (data) setDisplaySubscribedCount(data); });
+                  supabase.rpc('increment_counter', { counter_type: 'registered' }).then(({ data, error }) => { if (error) { supabase.from('marketing_counters').select('registered_count').eq('id', 'global').single().then(({ data: c }) => { if (c) { const nv = (c.registered_count || 0) + 1; supabase.from('marketing_counters').update({ registered_count: nv }).eq('id', 'global'); setDisplayRegisteredCount(nv); } }); } else if (data) setDisplayRegisteredCount(data); });
+                  supabase.rpc('increment_counter', { counter_type: 'subscribed' }).then(({ data, error }) => { if (error) { supabase.from('marketing_counters').select('subscribed_count').eq('id', 'global').single().then(({ data: c }) => { if (c) { const nv = (c.subscribed_count || 0) + 1; supabase.from('marketing_counters').update({ subscribed_count: nv }).eq('id', 'global'); setDisplaySubscribedCount(nv); } }); } else if (data) setDisplaySubscribedCount(data); });
                   // Ensure user is registered in the subscription base
                   setSptUsersList(prev => {
                     const exists = prev.some(u => u.email.toLowerCase() === resolvedEmail);
@@ -5040,7 +5040,7 @@ export default function App() {
                     
                     if (customerSession?.email) {
                       const emailLower = customerSession.email.toLowerCase().trim();
-                      supabase.rpc('increment_counter', { counter_type: 'subscribed' }).then(({ data }) => { if (data) setDisplaySubscribedCount(data); });
+                      supabase.rpc('increment_counter', { counter_type: 'subscribed' }).then(({ data, error }) => { if (error) { supabase.from('marketing_counters').select('subscribed_count').eq('id', 'global').single().then(({ data: c }) => { if (c) { const nv = (c.subscribed_count || 0) + 1; supabase.from('marketing_counters').update({ subscribed_count: nv }).eq('id', 'global'); setDisplaySubscribedCount(nv); } }); } else if (data) setDisplaySubscribedCount(data); });
                       setSptUsersList(prev => {
                         const exists = prev.some(u => u.email.toLowerCase() === emailLower);
                         if (exists) {
