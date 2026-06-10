@@ -947,15 +947,16 @@ async function startServer() {
         realtime: { transport: ws }
       });
 
-      // Always upsert to profile_pictures table (no FK constraints, always works)
+      // Also save to system_config (no FK constraints — reliable fallback)
+      const picKey = `profile_pic:${email.toLowerCase()}`;
       try {
-        await supabaseAdmin.from('profile_pictures').upsert(
-          { email: email.toLowerCase(), url: updates.profile_picture_url || null, updated_at: new Date().toISOString() },
-          { onConflict: 'email' }
+        await supabaseAdmin.from('system_config').upsert(
+          { key: picKey, value: updates.profile_picture_url || '', updated_at: new Date().toISOString() },
+          { onConflict: 'key' }
         );
       } catch {}
 
-      // Also try to update profiles table (may fail for users without Auth entry)
+      // Try to update profiles table (may fail for users without Auth entry)
       try {
         const { data: updateData } = await supabaseAdmin
           .from('profiles')

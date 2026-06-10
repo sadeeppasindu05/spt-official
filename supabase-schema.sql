@@ -436,21 +436,7 @@ CREATE POLICY "Only admins can delete backups." ON public.backups FOR DELETE USI
 
 ALTER PUBLICATION supabase_realtime ADD TABLE IF NOT EXISTS public.backups;
 
--- 22. Profile picture URL table (no FK constraints — works for custom-auth users)
-CREATE TABLE IF NOT EXISTS public.profile_pictures (
-  email text primary key,
-  url text,
-  updated_at timestamp with time zone default timezone('utc'::text, now()) not null
-);
-
-ALTER TABLE public.profile_pictures ENABLE ROW LEVEL SECURITY;
-
-CREATE POLICY "Profile pictures are viewable by everyone." ON public.profile_pictures FOR SELECT USING (true);
-CREATE POLICY "Anyone can upsert profile pictures." ON public.profile_pictures FOR ALL USING (true);
-
-ALTER PUBLICATION supabase_realtime ADD TABLE IF NOT EXISTS public.profile_pictures;
-
--- 23. Atomic counter increment RPC (avoids client-side prev+1 race conditions)
+-- 22. Atomic counter increment RPC (avoids client-side prev+1 race conditions)
 CREATE OR REPLACE FUNCTION increment_counter(counter_type text)
 RETURNS integer
 LANGUAGE plpgsql

@@ -1454,17 +1454,18 @@ export default function App() {
   React.useEffect(() => {
     async function fetchProfiles() {
       try {
-        const [profilesRes, picsRes] = await Promise.all([
+        const [profilesRes, configRes] = await Promise.all([
           supabase.from('profiles').select('*'),
-          supabase.from('profile_pictures').select('email, url')
+          supabase.from('system_config').select('key, value').like('key', 'profile_pic:%')
         ]);
-        const data = profilesRes.data;
         const picMap = new Map<string, string>();
-        if (picsRes.data) {
-          for (const p of picsRes.data) {
-            if (p.url) picMap.set(p.email.toLowerCase(), p.url);
+        if (configRes.data) {
+          for (const row of configRes.data) {
+            const email = row.key.replace('profile_pic:', '');
+            if (row.value) picMap.set(email, row.value);
           }
         }
+        const data = profilesRes.data;
         if (data && data.length > 0) {
           const mapped = data.map((p: any): SptUser => ({
             id: p.id || `profile_${Date.now()}`,
@@ -1489,7 +1490,6 @@ export default function App() {
             return merged;
           });
         } else {
-          // No profiles table data, but may have profile_pictures
           setSptUsersList(prev => {
             const updated = [...prev];
             for (const [email, url] of picMap) {
@@ -1548,14 +1548,15 @@ export default function App() {
   React.useEffect(() => {
     const interval = setInterval(async () => {
       try {
-        const [profilesRes, picsRes] = await Promise.all([
+        const [profilesRes, configRes] = await Promise.all([
           supabase.from('profiles').select('*'),
-          supabase.from('profile_pictures').select('email, url')
+          supabase.from('system_config').select('key, value').like('key', 'profile_pic:%')
         ]);
         const picMap = new Map<string, string>();
-        if (picsRes.data) {
-          for (const p of picsRes.data) {
-            if (p.url) picMap.set(p.email.toLowerCase(), p.url);
+        if (configRes.data) {
+          for (const row of configRes.data) {
+            const email = row.key.replace('profile_pic:', '');
+            if (row.value) picMap.set(email, row.value);
           }
         }
         const data = profilesRes.data;
