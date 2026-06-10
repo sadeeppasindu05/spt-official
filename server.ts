@@ -1127,6 +1127,20 @@ async function startServer() {
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
 
+  // Counter read (uses service_role to bypass RLS)
+  app.get("/api/counters/read", async (req, res) => {
+    try {
+      const supabaseUrl = getSupabaseUrl();
+      const serviceRole = getSupabaseServiceRole();
+      if (!supabaseUrl || !serviceRole) return res.status(500).json({ error: "Server config missing" });
+      const sb = createClient(supabaseUrl, serviceRole, { auth: { autoRefreshToken: false, persistSession: false }, realtime: { transport: ws } });
+      const { data, error } = await sb.from('marketing_counters').select('*').eq('id', 'global').maybeSingle();
+      if (error) return res.status(500).json({ error: error.message });
+      if (!data) return res.json({ registered_count: 592, subscribed_count: 370, online_count: 0 });
+      res.json({ registered_count: data.registered_count ?? 592, subscribed_count: data.subscribed_count ?? 370, online_count: data.online_count ?? 0 });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
   // Counter increment (uses service_role to bypass RLS)
   app.post("/api/counters/increment", async (req, res) => {
     try {

@@ -426,21 +426,14 @@ export default function App() {
           console.log("System config table failed to load or does not exist yet.", configFetchErr);
         }
 
-        // Load marketing counters from Supabase (create initial row if missing)
+        // Load marketing counters from server endpoint (uses service_role, bypasses RLS)
         try {
-          let { data: counters } = await supabase.from('marketing_counters').select('*').eq('id', 'global').maybeSingle();
-          if (!counters) {
-            const { data: newCounters, error: insertErr } = await supabase.from('marketing_counters').insert({
-              id: 'global',
-              registered_count: 592,
-              subscribed_count: 370
-            }).select().single();
-            if (!insertErr && newCounters) counters = newCounters;
-          }
-          if (counters) {
-            if (counters.registered_count != null) setDisplayRegisteredCount(counters.registered_count);
-            if (counters.subscribed_count != null) setDisplaySubscribedCount(counters.subscribed_count);
-            if (counters.online_count != null) setLiveOnlineCount(counters.online_count);
+          const r = await fetch('/api/counters/read');
+          if (r.ok) {
+            const d = await r.json();
+            if (d.registered_count != null) setDisplayRegisteredCount(d.registered_count);
+            if (d.subscribed_count != null) setDisplaySubscribedCount(d.subscribed_count);
+            if (d.online_count != null) setLiveOnlineCount(d.online_count);
           }
         } catch (countersErr) {
           console.log("Failed to load marketing counters:", countersErr);
@@ -671,11 +664,14 @@ export default function App() {
           break;
         }
         case 'marketing_counters': {
-          const { data } = await supabase.from('marketing_counters').select('*').eq('id', 'global').maybeSingle();
-          if (data) {
-            if (data.registered_count != null) setDisplayRegisteredCount(data.registered_count);
-            if (data.subscribed_count != null) setDisplaySubscribedCount(data.subscribed_count);
-          }
+          try {
+            const r = await fetch('/api/counters/read');
+            if (r.ok) {
+              const d = await r.json();
+              if (d.registered_count != null) setDisplayRegisteredCount(d.registered_count);
+              if (d.subscribed_count != null) setDisplaySubscribedCount(d.subscribed_count);
+            }
+          } catch {}
           break;
         }
       }
