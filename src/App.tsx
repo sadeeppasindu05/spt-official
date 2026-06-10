@@ -5346,12 +5346,6 @@ export default function App() {
                                     try {
                                       await syncProfileToSupabase(email, { profile_picture_url: publicUrl });
                                     } catch {}
-                                    try {
-                                      await supabase.from('system_config').upsert(
-                                        { key: `profile_pic:${email}`, value: publicUrl },
-                                        { onConflict: 'key' }
-                                      );
-                                    } catch {}
                                   }
                                   alert('පැතිකඩ ඡායාරූපය සාර්ථකව උඩුගත කරන ලදී! (Profile image uploaded!)');
                                 };

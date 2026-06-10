@@ -1243,8 +1243,11 @@ async function startServer() {
       }
       const publicUrl = `${sbUrl}/storage/v1/object/public/${bucketName}/${filePath}`;
       try {
-        const sb = createClient(sbUrl, sbRole, { auth: { autoRefreshToken: false, persistSession: false } });
-        await sb.from('system_config').upsert({ key: `profile_pic:${email.toLowerCase()}`, value: publicUrl }, { onConflict: 'key' });
+        await fetch(`${sbUrl}/rest/v1/system_config?on_conflict=key`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${sbRole}`, 'Content-Type': 'application/json', 'Prefer': 'resolution=merge-duplicates' },
+          body: JSON.stringify({ key: `profile_pic:${email.toLowerCase()}`, value: publicUrl }),
+        });
       } catch {}
       res.json({ success: true, url: publicUrl });
     } catch (err: any) {
