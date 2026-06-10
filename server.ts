@@ -1205,20 +1205,32 @@ async function startServer() {
       const clean = image.replace(/^data:image\/\w+;base64,/, '');
       const buf = Buffer.from(clean, 'base64');
       const filePath = `${email.toLowerCase()}_${Date.now()}.${ext}`;
-      const parsedUrl = new URL(sbUrl);
       const publicUrl = `${sbUrl}/storage/v1/object/public/${bucketName}/${filePath}`;
-      // Upload using supabaseAdmin (always works, bypasses RLS)
+      const sb = createClient(sbUrl, sbRole, { auth: { autoRefreshToken: false, persistSession: false } });
+      const { error: upErr } = await sb.storage.from(bucketName).upload(filePath, buf, { contentType: `image/${ext}`, upsert: true });
+      if (upErr) return res.status(500).json({ error: `Storage upload failed: ${upErr.message}` });
+      // Save URL to system_config
       try {
-        const sb = createClient(sbUrl, sbRole, { auth: { autoRefreshToken: false, persistSession: false } });
-        const { error: upErr } = await sb.storage.from(bucketName).upload(filePath, buf, { contentType: `image/${ext}`, upsert: true });
-        if (upErr) throw upErr;
-        try {
-          await sb.from('system_config').upsert({ key: `profile_pic:${email.toLowerCase()}`, value: publicUrl }, { onConflict: 'key' });
-        } catch {}
-        return res.json({ success: true, url: publicUrl });
-      } catch (err: any) {
-        res.status(500).json({ error: `Upload failed: ${err.message}` });
-      }
+        await sb.from('system_config').upsert({ key: `profile_pic:${email.toLowerCase()}`, value: publicUrl }, { onConflict: 'key' });
+      } catch {}
+      // Also save to profiles table so real-time sync works on reload
+      try {
+        const { data: existing } = await sb.from('profiles').update({ profile_picture_url: publicUrl }).eq('email', email.toLowerCase()).select();
+        if (!existing || existing.length === 0) {
+          let authUserId = null;
+          const { data: users } = await sb.auth.admin.listUsers();
+          const found = users?.users?.find((u: any) => u.email?.toLowerCase() === email.toLowerCase());
+          if (found) authUserId = found.id;
+          if (!authUserId) {
+            const { data: newUser } = await sb.auth.admin.createUser({ email: email.toLowerCase(), email_confirm: true, password: crypto.randomUUID() });
+            if (newUser?.user) authUserId = newUser.user.id;
+          }
+          if (authUserId) {
+            await sb.from('profiles').insert({ id: authUserId, email: email.toLowerCase(), profile_picture_url: publicUrl });
+          }
+        }
+      } catch {}
+      res.json({ success: true, url: publicUrl });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
