@@ -951,7 +951,7 @@ async function startServer() {
       const picKey = `profile_pic:${email.toLowerCase()}`;
       try {
         await supabaseAdmin.from('system_config').upsert(
-          { key: picKey, value: updates.profile_picture_url || '', updated_at: new Date().toISOString() },
+          { key: picKey, value: updates.profile_picture_url || '' },
           { onConflict: 'key' }
         );
       } catch {}
