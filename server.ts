@@ -401,6 +401,9 @@ async function startServer() {
     } catch (err: any) { console.error('Startup bucket creation failed (can retry via endpoint):', err.message); }
   })();
 
+  // Persist online count to Supabase every 60s
+  setInterval(() => { persistOnlineCount(); }, 60000);
+
   // Supabase runtime config endpoint (no auth needed)
   app.get("/api/config", (req, res) => {
     res.json({

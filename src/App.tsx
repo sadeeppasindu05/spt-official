@@ -438,6 +438,7 @@ export default function App() {
           if (counters) {
             if (counters.registered_count != null) setDisplayRegisteredCount(counters.registered_count);
             if (counters.subscribed_count != null) setDisplaySubscribedCount(counters.subscribed_count);
+            if (counters.online_count != null) setLiveOnlineCount(counters.online_count);
           }
         } catch (countersErr) {
           console.log("Failed to load marketing counters:", countersErr);
@@ -1749,7 +1750,6 @@ export default function App() {
         return;
       }
       
-      supabase.rpc('increment_counter', { counter_type: 'subscribed' }).then(({ data, error }) => { if (error) { supabase.from('marketing_counters').select('subscribed_count').eq('id', 'global').single().then(({ data: c }) => { if (c) { const nv = (c.subscribed_count || 0) + 1; supabase.from('marketing_counters').update({ subscribed_count: nv }).eq('id', 'global'); setDisplaySubscribedCount(nv); } }); } else if (data) setDisplaySubscribedCount(data); });
       setSptUsersList((prev: SptUser[]) => {
         const exists = prev.some(u => u.email.toLowerCase() === userEmail.toLowerCase());
         const expDate = new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString();
@@ -2812,7 +2812,7 @@ export default function App() {
             <div className="flex items-center gap-1.5 text-slate-300">
               <Activity className="w-3 h-3 text-amber-400" />
               <span>{t('මාර්ගගත', 'Online')}:</span>
-              <span className="text-amber-300 font-bold">{14 + liveOnlineCount}</span>
+              <span className="text-amber-300 font-bold">{liveOnlineCount || 14}</span>
             </div>
           </div>
           {countdownDisplay && (
@@ -4739,9 +4739,18 @@ export default function App() {
                   const isLoginFlow = !!userData.password;
                   console.log('[onSuccess] isLoginFlow:', isLoginFlow, 'password present:', !!userData.password, 'userData keys:', Object.keys(userData));
 
-                  // Increment display counters for marketing
-                  supabase.rpc('increment_counter', { counter_type: 'registered' }).then(({ data, error }) => { if (error) { supabase.from('marketing_counters').select('registered_count').eq('id', 'global').single().then(({ data: c }) => { if (c) { const nv = (c.registered_count || 0) + 1; supabase.from('marketing_counters').update({ registered_count: nv }).eq('id', 'global'); setDisplayRegisteredCount(nv); } }); } else if (data) setDisplayRegisteredCount(data); });
-                  supabase.rpc('increment_counter', { counter_type: 'subscribed' }).then(({ data, error }) => { if (error) { supabase.from('marketing_counters').select('subscribed_count').eq('id', 'global').single().then(({ data: c }) => { if (c) { const nv = (c.subscribed_count || 0) + 1; supabase.from('marketing_counters').update({ subscribed_count: nv }).eq('id', 'global'); setDisplaySubscribedCount(nv); } }); } else if (data) setDisplaySubscribedCount(data); });
+                  // Increment registered counter only if user doesn't exist in profiles yet
+                  supabase.from('profiles').select('email').eq('email', resolvedEmail).maybeSingle().then(({ data: existingProfile }) => {
+                    if (!existingProfile) {
+                      supabase.rpc('increment_counter', { counter_type: 'registered' }).then(({ data, error }) => {
+                        if (error) {
+                          supabase.from('marketing_counters').select('registered_count').eq('id', 'global').single().then(({ data: c }) => {
+                            if (c) { const nv = (c.registered_count || 0) + 1; supabase.from('marketing_counters').update({ registered_count: nv }).eq('id', 'global'); setDisplayRegisteredCount(nv); }
+                          });
+                        } else if (data) setDisplayRegisteredCount(data);
+                      });
+                    }
+                  });
                   // Ensure user is registered in the subscription base
                   setSptUsersList(prev => {
                     const exists = prev.some(u => u.email.toLowerCase() === resolvedEmail);
