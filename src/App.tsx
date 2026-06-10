@@ -1664,11 +1664,15 @@ export default function App() {
   // Sync user profile fields to Supabase profiles table
   const syncProfileToSupabase = async (email: string, updates: Record<string, any>) => {
     try {
-      await fetch('/api/admin/sync-profile', {
+      const res = await fetch('/api/admin/sync-profile', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: email.toLowerCase(), ...updates }),
       });
+      if (!res.ok) {
+        const text = await res.text();
+        console.error('Profile sync server error:', res.status, text);
+      }
     } catch (err) {
       console.error("Profile sync error:", err);
     }

@@ -387,6 +387,28 @@ async function startServer() {
     next();
   });
 
+  // Create storage buckets if missing (service_role can do this)
+  (async () => {
+    try {
+      const sbUrl = getSupabaseUrl();
+      const sbRole = getSupabaseServiceRole();
+      if (sbUrl && sbRole) {
+        const sb = createClient(sbUrl, sbRole, { auth: { autoRefreshToken: false, persistSession: false } });
+        const { data: buckets } = await sb.storage.listBuckets();
+        const existing = new Set((buckets || []).map((b: any) => b.name));
+        const needed = ['avatars', 'receipts', 'cms-images'];
+        for (const name of needed) {
+          if (!existing.has(name)) {
+            await sb.storage.createBucket(name, { public: true });
+            console.log(`Created storage bucket: ${name}`);
+          }
+        }
+      }
+    } catch (err) {
+      console.error('Failed to ensure storage buckets:', err);
+    }
+  })();
+
   // Supabase runtime config endpoint (no auth needed)
   app.get("/api/config", (req, res) => {
     res.json({
@@ -1142,6 +1164,29 @@ async function startServer() {
         passwordLastChar: password[password.length - 1],
         hint: 'Check the region in Supabase Dashboard → Project Settings → Database. Try setting DB_PASSWORD env var if different.',
       });
+    }
+  });
+
+  // Ensure storage buckets exist (client-side fallback)
+  app.post("/api/admin/ensure-buckets", async (req, res) => {
+    try {
+      const sbUrl = getSupabaseUrl();
+      const sbRole = getSupabaseServiceRole();
+      if (!sbUrl || !sbRole) return res.status(500).json({ error: 'Supabase not configured' });
+      const sb = createClient(sbUrl, sbRole, { auth: { autoRefreshToken: false, persistSession: false } });
+      const { data: buckets } = await sb.storage.listBuckets();
+      const existing = new Set((buckets || []).map((b: any) => b.name));
+      const needed = ['avatars', 'receipts', 'cms-images'];
+      const created: string[] = [];
+      for (const name of needed) {
+        if (!existing.has(name)) {
+          await sb.storage.createBucket(name, { public: true });
+          created.push(name);
+        }
+      }
+      res.json({ success: true, created, existed: needed.filter(n => !created.includes(n)) });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
     }
   });
 

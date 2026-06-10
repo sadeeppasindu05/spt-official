@@ -11,10 +11,12 @@ type BucketName = (typeof BUCKETS)[keyof typeof BUCKETS];
 async function ensureBucket(bucket: BucketName): Promise<boolean> {
   try {
     const { data: buckets } = await supabase.storage.listBuckets();
-    if (!buckets?.find((b) => b.name === bucket)) {
-      await supabase.storage.createBucket(bucket, { public: true });
-    }
-    return true;
+    if (buckets?.find((b) => b.name === bucket)) return true;
+  } catch {}
+  try {
+    const res = await fetch('/api/admin/ensure-buckets', { method: 'POST' });
+    const json = await res.json();
+    return json.success === true;
   } catch {
     return false;
   }
