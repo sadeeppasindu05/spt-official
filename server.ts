@@ -1111,6 +1111,7 @@ async function startServer() {
     const errors: string[] = [];
     let connected = false;
     let lastError = '';
+    const { Pool } = await import('pg');
     for (const region of regions) {
       try {
         const pool = new Pool({
