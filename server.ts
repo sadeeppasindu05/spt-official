@@ -387,25 +387,45 @@ async function startServer() {
     next();
   });
 
-  // Create storage buckets if missing (service_role can do this)
+  // Create storage buckets if missing (via pg SQL for reliability)
   (async () => {
+    const sbUrl = getSupabaseUrl();
+    if (!sbUrl) return;
     try {
-      const sbUrl = getSupabaseUrl();
-      const sbRole = getSupabaseServiceRole();
-      if (sbUrl && sbRole) {
-        const sb = createClient(sbUrl, sbRole, { auth: { autoRefreshToken: false, persistSession: false } });
-        const { data: buckets } = await sb.storage.listBuckets();
-        const existing = new Set((buckets || []).map((b: any) => b.name));
-        const needed = ['avatars', 'receipts', 'cms-images'];
-        for (const name of needed) {
-          if (!existing.has(name)) {
-            await sb.storage.createBucket(name, { public: true });
-            console.log(`Created storage bucket: ${name}`);
+      const { Pool } = require('pg');
+      const regions = ['us-east-1', 'eu-west-1', 'us-west-1', 'eu-central-1', 'ap-southeast-1'];
+      const password = process.env.DB_PASSWORD || "iQzlOrjiToiSCd00";
+      const projectRef = "wrhqguwubtxgtwtoeuqx";
+      for (const region of regions) {
+        try {
+          const pool = new Pool({
+            connectionString: `postgresql://postgres.${projectRef}:${password}@aws-0-${region}.pooler.supabase.com:5432/postgres`,
+            max: 1, connectionTimeoutMillis: 5000
+          });
+          const client = await pool.connect();
+          await client.query(`INSERT INTO storage.buckets (id, name, public, avif_autodetection) VALUES ('avatars','avatars',true,false),('receipts','receipts',true,false),('cms-images','cms-images',true,false) ON CONFLICT (id) DO NOTHING`);
+          for (const b of ['avatars','receipts','cms-images']) {
+            await client.query(`DROP POLICY IF EXISTS "Public Access ${b}" ON storage.objects`);
+            await client.query(`CREATE POLICY "Public Access ${b}" ON storage.objects FOR SELECT USING (bucket_id = '${b}')`);
           }
-        }
+          client.release(); await pool.end();
+          console.log(`Storage buckets ensured via pg (${region})`);
+          break;
+        } catch {}
       }
     } catch (err) {
-      console.error('Failed to ensure storage buckets:', err);
+      console.error('Failed to ensure storage buckets via pg, trying supabase client...');
+      try {
+        const sbRole = getSupabaseServiceRole();
+        if (sbUrl && sbRole) {
+          const sb = createClient(sbUrl, sbRole, { auth: { autoRefreshToken: false, persistSession: false } });
+          const { data: buckets } = await sb.storage.listBuckets();
+          const existing = new Set((buckets || []).map((b: any) => b.name));
+          for (const name of ['avatars', 'receipts', 'cms-images']) {
+            if (!existing.has(name)) { await sb.storage.createBucket(name, { public: true }); console.log(`Created ${name} via client`); }
+          }
+        }
+      } catch (e2) { console.error('All bucket creation methods failed:', e2); }
     }
   })();
 
@@ -1165,27 +1185,31 @@ async function startServer() {
     }
   });
 
-  // Ensure storage buckets exist (client-side fallback)
+  // Ensure storage buckets exist (via pg SQL)
   app.post("/api/admin/ensure-buckets", async (req, res) => {
-    try {
-      const sbUrl = getSupabaseUrl();
-      const sbRole = getSupabaseServiceRole();
-      if (!sbUrl || !sbRole) return res.status(500).json({ error: 'Supabase not configured' });
-      const sb = createClient(sbUrl, sbRole, { auth: { autoRefreshToken: false, persistSession: false } });
-      const { data: buckets } = await sb.storage.listBuckets();
-      const existing = new Set((buckets || []).map((b: any) => b.name));
-      const needed = ['avatars', 'receipts', 'cms-images'];
-      const created: string[] = [];
-      for (const name of needed) {
-        if (!existing.has(name)) {
-          await sb.storage.createBucket(name, { public: true });
-          created.push(name);
+    const regions = ['us-east-1', 'eu-west-1', 'us-west-1', 'eu-central-1', 'ap-southeast-1'];
+    const password = process.env.DB_PASSWORD || "iQzlOrjiToiSCd00";
+    const projectRef = "wrhqguwubtxgtwtoeuqx";
+    const errors: string[] = [];
+    for (const region of regions) {
+      try {
+        const pool = new Pool({
+          connectionString: `postgresql://postgres.${projectRef}:${password}@aws-0-${region}.pooler.supabase.com:5432/postgres`,
+          max: 1, connectionTimeoutMillis: 5000
+        });
+        const client = await pool.connect();
+        await client.query(`INSERT INTO storage.buckets (id, name, public, avif_autodetection) VALUES ('avatars','avatars',true,false),('receipts','receipts',true,false),('cms-images','cms-images',true,false) ON CONFLICT (id) DO NOTHING`);
+        for (const b of ['avatars','receipts','cms-images']) {
+          await client.query(`DROP POLICY IF EXISTS "Public Access ${b}" ON storage.objects`);
+          await client.query(`CREATE POLICY "Public Access ${b}" ON storage.objects FOR SELECT USING (bucket_id = '${b}')`);
         }
+        client.release(); await pool.end();
+        return res.json({ success: true, method: 'pg', region });
+      } catch (err: any) {
+        errors.push(`${region}: ${err.message || 'unknown'}`);
       }
-      res.json({ success: true, created, existed: needed.filter(n => !created.includes(n)) });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
     }
+    res.status(500).json({ error: 'Failed to create buckets via SQL', errors });
   });
 
   // Get profile pic URL from system_config
