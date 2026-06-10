@@ -392,7 +392,7 @@ async function startServer() {
     const sbUrl = getSupabaseUrl();
     if (!sbUrl) return;
     try {
-      const { Pool } = require('pg');
+      // Pool already imported at top
       const regions = ['us-east-1', 'eu-west-1', 'us-west-1', 'eu-central-1', 'ap-southeast-1'];
       const password = process.env.DB_PASSWORD || "iQzlOrjiToiSCd00";
       const projectRef = "wrhqguwubtxgtwtoeuqx";
@@ -403,6 +403,7 @@ async function startServer() {
             max: 1, connectionTimeoutMillis: 5000
           });
           const client = await pool.connect();
+          await client.query('SET search_path TO public, storage');
           await client.query(`INSERT INTO storage.buckets (id, name, public, avif_autodetection) VALUES ('avatars','avatars',true,false),('receipts','receipts',true,false),('cms-images','cms-images',true,false) ON CONFLICT (id) DO NOTHING`);
           for (const b of ['avatars','receipts','cms-images']) {
             await client.query(`DROP POLICY IF EXISTS "Public Access ${b}" ON storage.objects`);
@@ -1198,6 +1199,7 @@ async function startServer() {
           max: 1, connectionTimeoutMillis: 5000
         });
         const client = await pool.connect();
+        await client.query('SET search_path TO public, storage');
         await client.query(`INSERT INTO storage.buckets (id, name, public, avif_autodetection) VALUES ('avatars','avatars',true,false),('receipts','receipts',true,false),('cms-images','cms-images',true,false) ON CONFLICT (id) DO NOTHING`);
         for (const b of ['avatars','receipts','cms-images']) {
           await client.query(`DROP POLICY IF EXISTS "Public Access ${b}" ON storage.objects`);
