@@ -1218,6 +1218,40 @@ async function startServer() {
     res.status(500).json({ error: 'All methods failed', ...result });
   });
 
+  // Upload avatar via server (bypasses client-side RLS)
+  app.post("/api/admin/upload-avatar", async (req, res) => {
+    try {
+      const { email, image, bucket } = req.body;
+      if (!email || !image) return res.status(400).json({ error: 'Email and image required' });
+      const sbUrl = getSupabaseUrl();
+      const sbRole = getSupabaseServiceRole();
+      if (!sbUrl || !sbRole) return res.status(500).json({ error: 'Supabase service role not configured' });
+      const bucketName = bucket || 'avatars';
+      const ext = image.includes('image/png') ? 'png' : 'jpg';
+      const clean = image.replace(/^data:image\/\w+;base64,/, '');
+      const buf = Buffer.from(clean, 'base64');
+      const filePath = `${email.toLowerCase()}_${Date.now()}.${ext}`;
+      const uploadUrl = `${sbUrl}/storage/v1/object/${bucketName}/${filePath}`;
+      const uploadRes = await fetch(uploadUrl, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${sbRole}`, 'Content-Type': `image/${ext}`, 'x-upsert': 'true' },
+        body: buf,
+      });
+      if (!uploadRes.ok) {
+        const errText = await uploadRes.text();
+        return res.status(500).json({ error: `Upload failed: ${uploadRes.status} ${errText}` });
+      }
+      const publicUrl = `${sbUrl}/storage/v1/object/public/${bucketName}/${filePath}`;
+      try {
+        const sb = createClient(sbUrl, sbRole, { auth: { autoRefreshToken: false, persistSession: false } });
+        await sb.from('system_config').upsert({ key: `profile_pic:${email.toLowerCase()}`, value: publicUrl }, { onConflict: 'key' });
+      } catch {}
+      res.json({ success: true, url: publicUrl });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // Get profile pic URL from system_config
   app.get("/api/profile/pic", async (req, res) => {
     try {

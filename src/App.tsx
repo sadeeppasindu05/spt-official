@@ -5318,11 +5318,23 @@ export default function App() {
                                   const b64 = reader.result as string;
                                   const email = customerSession.email.toLowerCase();
                                   const currentUser = sptUsersList.find(u => u.email.toLowerCase() === email);
+                                  let publicUrl = null;
                                   const oldUrl = currentUser?.profilePictureUrl;
                                   if (oldUrl && oldUrl.includes('supabase')) {
                                     await deleteFromSupabaseStorage(oldUrl, BUCKETS.avatars);
                                   }
-                                  const publicUrl = await uploadBase64ToBucket(b64, BUCKETS.avatars, email);
+                                  try {
+                                    const uploadRes = await fetch('/api/admin/upload-avatar', {
+                                      method: 'POST',
+                                      headers: { 'Content-Type': 'application/json' },
+                                      body: JSON.stringify({ email, image: b64, bucket: 'avatars' }),
+                                    });
+                                    const uploadJson = await uploadRes.json();
+                                    if (uploadJson.success) publicUrl = uploadJson.url;
+                                  } catch (e) { console.error('Server upload failed:', e); }
+                                  if (!publicUrl) {
+                                    publicUrl = await uploadBase64ToBucket(b64, BUCKETS.avatars, email);
+                                  }
                                   const newUrl = publicUrl || b64;
                                   setSptUsersList(prev => prev.map(u => {
                                     if (u.email.toLowerCase() === email) {
