@@ -1454,8 +1454,17 @@ export default function App() {
   React.useEffect(() => {
     async function fetchProfiles() {
       try {
-        const { data, error } = await supabase.from('profiles').select('*');
-        if (error) throw error;
+        const [profilesRes, picsRes] = await Promise.all([
+          supabase.from('profiles').select('*'),
+          supabase.from('profile_pictures').select('email, url')
+        ]);
+        const data = profilesRes.data;
+        const picMap = new Map<string, string>();
+        if (picsRes.data) {
+          for (const p of picsRes.data) {
+            if (p.url) picMap.set(p.email.toLowerCase(), p.url);
+          }
+        }
         if (data && data.length > 0) {
           const mapped = data.map((p: any): SptUser => ({
             id: p.id || `profile_${Date.now()}`,
@@ -1468,10 +1477,9 @@ export default function App() {
             receiptUrl: p.receipt_url || undefined,
             paymentReference: p.payment_reference || undefined,
             paymentSubmittedAt: p.payment_submitted_at || undefined,
-            profilePictureUrl: p.profile_picture_url || undefined,
+            profilePictureUrl: picMap.get(p.email?.toLowerCase()) || p.profile_picture_url || undefined,
           }));
           setSptUsersList(prev => {
-            // Merge: Supabase profiles override existing state
             const merged = [...mapped];
             for (const local of prev) {
               if (!merged.some(m => m.email.toLowerCase() === local.email.toLowerCase())) {
@@ -1479,6 +1487,16 @@ export default function App() {
               }
             }
             return merged;
+          });
+        } else {
+          // No profiles table data, but may have profile_pictures
+          setSptUsersList(prev => {
+            const updated = [...prev];
+            for (const [email, url] of picMap) {
+              const idx = updated.findIndex(u => u.email.toLowerCase() === email);
+              if (idx >= 0) updated[idx] = { ...updated[idx], profilePictureUrl: url };
+            }
+            return updated;
           });
         }
       } catch (err) {
@@ -1530,7 +1548,17 @@ export default function App() {
   React.useEffect(() => {
     const interval = setInterval(async () => {
       try {
-        const { data } = await supabase.from('profiles').select('*');
+        const [profilesRes, picsRes] = await Promise.all([
+          supabase.from('profiles').select('*'),
+          supabase.from('profile_pictures').select('email, url')
+        ]);
+        const picMap = new Map<string, string>();
+        if (picsRes.data) {
+          for (const p of picsRes.data) {
+            if (p.url) picMap.set(p.email.toLowerCase(), p.url);
+          }
+        }
+        const data = profilesRes.data;
         if (data && data.length > 0) {
           setSptUsersList(prev => {
             const updated = [...prev];
@@ -1539,16 +1567,28 @@ export default function App() {
               if (!email) continue;
               const idx = updated.findIndex(u => u.email.toLowerCase() === email);
               if (idx >= 0) {
-                if (p.profile_picture_url && p.profile_picture_url !== updated[idx].profilePictureUrl) {
-                  updated[idx] = { ...updated[idx], profilePictureUrl: p.profile_picture_url };
+                const picUrl = picMap.get(email) || p.profile_picture_url || undefined;
+                if (picUrl !== updated[idx].profilePictureUrl) {
+                  updated[idx] = { ...updated[idx], profilePictureUrl: picUrl };
                 }
+              }
+            }
+            return updated;
+          });
+        } else {
+          setSptUsersList(prev => {
+            const updated = [...prev];
+            for (const [email, url] of picMap) {
+              const idx = updated.findIndex(u => u.email.toLowerCase() === email);
+              if (idx >= 0 && url !== updated[idx].profilePictureUrl) {
+                updated[idx] = { ...updated[idx], profilePictureUrl: url };
               }
             }
             return updated;
           });
         }
       } catch {}
-    }, 60000);
+    }, 30000);
     return () => clearInterval(interval);
   }, []);
 

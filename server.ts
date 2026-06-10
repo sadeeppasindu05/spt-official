@@ -947,34 +947,57 @@ async function startServer() {
         realtime: { transport: ws }
       });
 
-      // Try direct upsert by email first (requires unique constraint on email)
-      const { error: upsertError } = await supabaseAdmin.from('profiles').upsert({
-        email: email.toLowerCase(),
-        ...updates,
-        updated_at: new Date().toISOString()
-      }, { onConflict: 'email', ignoreDuplicates: false });
+      // Always upsert to profile_pictures table (no FK constraints, always works)
+      try {
+        await supabaseAdmin.from('profile_pictures').upsert(
+          { email: email.toLowerCase(), url: updates.profile_picture_url || null, updated_at: new Date().toISOString() },
+          { onConflict: 'email' }
+        );
+      } catch {}
 
-      if (upsertError) {
-        // Fallback: find or create auth user, then upsert by id
-        const { data: userList } = await supabaseAdmin.auth.admin.listUsers();
-        let authUser = userList?.users?.find((u: any) => u.email?.toLowerCase() === email.toLowerCase());
-        if (!authUser) {
-          const { data: newUser, error: createError } = await supabaseAdmin.auth.admin.createUser({
-            email: email.toLowerCase(),
-            email_confirm: true,
-            password: crypto.randomUUID(),
-          });
-          if (!createError && newUser?.user) authUser = newUser.user;
+      // Also try to update profiles table (may fail for users without Auth entry)
+      try {
+        const { data: updateData } = await supabaseAdmin
+          .from('profiles')
+          .update({ ...updates, updated_at: new Date().toISOString() })
+          .eq('email', email.toLowerCase())
+          .select();
+
+        if (!updateData || updateData.length === 0) {
+          let authUserId: string | null = null;
+          let page = 0;
+          const pageSize = 1000;
+          while (!authUserId) {
+            const { data: userList } = await supabaseAdmin.auth.admin.listUsers({ page, perPage: pageSize });
+            const found = userList?.users?.find((u: any) => u.email?.toLowerCase() === email.toLowerCase());
+            if (found) { authUserId = found.id; break; }
+            if (!userList?.users || userList.users.length < pageSize) break;
+            page++;
+          }
+          if (!authUserId) {
+            const { data: newUser, error: createError } = await supabaseAdmin.auth.admin.createUser({
+              email: email.toLowerCase(),
+              email_confirm: true,
+              password: crypto.randomUUID(),
+            });
+            if (createError) {
+              const { data: existingList } = await supabaseAdmin.auth.admin.listUsers();
+              const existing = existingList?.users?.find((u: any) => u.email?.toLowerCase() === email.toLowerCase());
+              if (existing) authUserId = existing.id;
+            } else if (newUser?.user) {
+              authUserId = newUser.user.id;
+            }
+          }
+          if (authUserId) {
+            await supabaseAdmin.from('profiles').insert({
+              id: authUserId,
+              email: email.toLowerCase(),
+              ...updates,
+              updated_at: new Date().toISOString()
+            });
+          }
         }
-        if (authUser) {
-          await supabaseAdmin.from('profiles').upsert({
-            id: authUser.id,
-            email: email.toLowerCase(),
-            ...updates,
-            updated_at: new Date().toISOString()
-          }, { onConflict: 'id' });
-        }
-      }
+      } catch {}
 
       res.json({ success: true });
     } catch (err: any) {
