@@ -1177,8 +1177,9 @@ async function startServer() {
       const sbUrl = getSupabaseUrl();
       const sbRole = getSupabaseServiceRole();
       if (!sbUrl || !sbRole) return res.status(500).json({ error: 'Supabase not fully configured', hasServiceRole: !!sbRole });
-      const sb = createClient(sbUrl, sbRole, { auth: { autoRefreshToken: false, persistSession: false } });
-      const { data: buckets } = await sb.storage.listBuckets();
+      const sb = createClient(sbUrl, sbRole, { auth: { autoRefreshToken: false, persistSession: false }, realtime: { transport: ws } });
+      const { data: buckets, error: listErr } = await sb.storage.listBuckets();
+      if (listErr) return res.status(500).json({ error: `listBuckets: ${listErr.message}` });
       const existing = new Set((buckets || []).map((b: any) => b.name));
       for (const name of ['avatars', 'receipts', 'cms-images']) {
         if (!existing.has(name)) {
@@ -1206,30 +1207,36 @@ async function startServer() {
       const buf = Buffer.from(clean, 'base64');
       const filePath = `${email.toLowerCase()}_${Date.now()}.${ext}`;
       const publicUrl = `${sbUrl}/storage/v1/object/public/${bucketName}/${filePath}`;
-      const sb = createClient(sbUrl, sbRole, { auth: { autoRefreshToken: false, persistSession: false } });
+      const sb = createClient(sbUrl, sbRole, {
+        auth: { autoRefreshToken: false, persistSession: false },
+        realtime: { transport: ws },
+      });
       const { error: upErr } = await sb.storage.from(bucketName).upload(filePath, buf, { contentType: `image/${ext}`, upsert: true });
-      if (upErr) return res.status(500).json({ error: `Storage upload failed: ${upErr.message}` });
+      if (upErr) return res.status(500).json({ error: `Storage: ${upErr.message}` });
       // Save URL to system_config
+      try { await sb.from('system_config').upsert({ key: `profile_pic:${email.toLowerCase()}`, value: publicUrl }, { onConflict: 'key' }); }
+      catch (e: any) { console.error('system_config upsert error:', e.message); }
+      // Also save to profiles table for real-time sync & reload persistence
       try {
-        await sb.from('system_config').upsert({ key: `profile_pic:${email.toLowerCase()}`, value: publicUrl }, { onConflict: 'key' });
-      } catch {}
-      // Also save to profiles table so real-time sync works on reload
-      try {
-        const { data: existing } = await sb.from('profiles').update({ profile_picture_url: publicUrl }).eq('email', email.toLowerCase()).select();
+        const { data: existing, error: updErr } = await sb.from('profiles').update({ profile_picture_url: publicUrl }).eq('email', email.toLowerCase()).select();
+        if (updErr) console.error('profile update error:', updErr.message);
         if (!existing || existing.length === 0) {
           let authUserId = null;
-          const { data: users } = await sb.auth.admin.listUsers();
+          const { data: users, error: listErr } = await sb.auth.admin.listUsers();
+          if (listErr) console.error('listUsers error:', listErr.message);
           const found = users?.users?.find((u: any) => u.email?.toLowerCase() === email.toLowerCase());
           if (found) authUserId = found.id;
           if (!authUserId) {
-            const { data: newUser } = await sb.auth.admin.createUser({ email: email.toLowerCase(), email_confirm: true, password: crypto.randomUUID() });
+            const { data: newUser, error: createErr } = await sb.auth.admin.createUser({ email: email.toLowerCase(), email_confirm: true, password: crypto.randomUUID() });
+            if (createErr) console.error('createUser error:', createErr.message);
             if (newUser?.user) authUserId = newUser.user.id;
           }
           if (authUserId) {
-            await sb.from('profiles').insert({ id: authUserId, email: email.toLowerCase(), profile_picture_url: publicUrl });
-          }
+            const { error: insErr } = await sb.from('profiles').insert({ id: authUserId, email: email.toLowerCase(), profile_picture_url: publicUrl });
+            if (insErr) console.error('profile insert error:', insErr.message);
+          } else { console.error('No auth user found/created for profiles insert'); }
         }
-      } catch {}
+      } catch (e: any) { console.error('profiles save error:', e.message); }
       res.json({ success: true, url: publicUrl });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -1237,6 +1244,36 @@ async function startServer() {
   });
 
   // Get profile pic URL from system_config
+  // Debug: test Supabase connection step by step
+  app.get("/api/admin/debug-upload", async (req, res) => {
+    const steps: any = {};
+    try {
+      const sbUrl = getSupabaseUrl();
+      const sbRole = getSupabaseServiceRole();
+      steps.hasUrl = !!sbUrl;
+      steps.hasRole = !!sbRole;
+      if (!sbUrl || !sbRole) return res.json({ error: 'Missing credentials', steps });
+      const sb = createClient(sbUrl, sbRole, { auth: { autoRefreshToken: false, persistSession: false }, realtime: { transport: ws } });
+      steps.client = 'ok';
+      const { data: buckets, error: listErr } = await sb.storage.listBuckets();
+      steps.listBuckets = listErr ? `err: ${listErr.message}` : `ok (${(buckets||[]).length} buckets)`;
+      if (!listErr) {
+        const publicUrl = `${sbUrl}/storage/v1/object/public/avatars/test_${Date.now()}.txt`;
+        const { error: upErr } = await sb.storage.from('avatars').upload(`test_${Date.now()}.txt`, Buffer.from('test'), { contentType: 'text/plain', upsert: true });
+        steps.upload = upErr ? `err: ${upErr.message}` : 'ok';
+        if (!upErr) {
+          const { error: sysErr } = await sb.from('system_config').upsert({ key: 'debug_test', value: 'ok' }, { onConflict: 'key' });
+          steps.systemConfig = sysErr ? `err: ${sysErr.message}` : 'ok';
+          const { error: profErr } = await sb.from('profiles').update({ name: '__debug__' }).eq('email', '__debug__@test.com');
+          steps.profilesUpdate = profErr ? `err: ${profErr.message}` : 'ok (no rows)';
+          const { error: bucketDelErr } = await sb.storage.from('avatars').remove([`test_${Date.now()}.txt`.replace('test_', 'test_')]);
+          if (bucketDelErr) console.error('cleanup:', bucketDelErr.message);
+        }
+      }
+      res.json({ success: true, steps });
+    } catch (err: any) { res.json({ error: err.message, steps }); }
+  });
+
   app.get("/api/profile/pic", async (req, res) => {
     try {
       const email = (req.query.email as string)?.toLowerCase();
