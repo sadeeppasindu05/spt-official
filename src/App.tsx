@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Sparkles, Layers, Compass, Tv, Music, PenTool, Shirt, Shield, QrCode, 
@@ -41,6 +41,10 @@ export default function App() {
   // Persistent marketing counters (start at base, increment on each new signup/subscription)
   const [displayRegisteredCount, setDisplayRegisteredCount] = useState<number>(592);
   const [displaySubscribedCount, setDisplaySubscribedCount] = useState<number>(370);
+  // Refs for direct DOM counter updates (bypasses React rendering issues)
+  const registeredRef = useRef<HTMLSpanElement>(null);
+  const subscribedRef = useRef<HTMLSpanElement>(null);
+  const onlineRef = useRef<HTMLSpanElement>(null);
   
   // Real-time plan activation toast
   const [planActivationToast, setPlanActivationToast] = useState<{ email: string; plan?: string; status: string } | null>(null);
@@ -65,7 +69,7 @@ export default function App() {
     return () => clearInterval(timer);
   }, []);
 
-  // Live counters (heartbeat + polling) — syncs online, registered, subscribed every 30s
+  // Live counters (heartbeat + polling) — syncs online, registered, subscribed every 3s
   React.useEffect(() => {
     const ping = async () => {
       try {
@@ -74,13 +78,22 @@ export default function App() {
         if (res && res.ok) {
           const data = await res.json();
           setLiveOnlineCount(data.count || 0);
-          if (data.registered != null) setDisplayRegisteredCount(data.registered);
-          if (data.subscribed != null) setDisplaySubscribedCount(data.subscribed);
+          if (data.registered != null) {
+            setDisplayRegisteredCount(data.registered);
+            if (registeredRef.current) registeredRef.current.textContent = String(data.registered);
+          }
+          if (data.subscribed != null) {
+            setDisplaySubscribedCount(data.subscribed);
+            if (subscribedRef.current) subscribedRef.current.textContent = String(data.subscribed);
+          }
+          if (data.count != null && onlineRef.current) {
+            onlineRef.current.textContent = String(14 + (data.count || 0));
+          }
         }
       } catch {}
     };
     ping();
-    const interval = setInterval(ping, 30000);
+    const interval = setInterval(ping, 3000);
     return () => clearInterval(interval);
   }, []);
 
@@ -431,9 +444,14 @@ export default function App() {
           const r = await fetch('/api/counters/read');
           if (r.ok) {
             const d = await r.json();
-            if (d.registered_count != null) setDisplayRegisteredCount(d.registered_count);
-            if (d.subscribed_count != null) setDisplaySubscribedCount(d.subscribed_count);
-            if (d.online_count != null) setLiveOnlineCount(d.online_count);
+            if (d.registered_count != null) {
+              setDisplayRegisteredCount(d.registered_count);
+              if (registeredRef.current) registeredRef.current.textContent = String(d.registered_count);
+            }
+            if (d.subscribed_count != null) {
+              setDisplaySubscribedCount(d.subscribed_count);
+              if (subscribedRef.current) subscribedRef.current.textContent = String(d.subscribed_count);
+            }
           }
         } catch (countersErr) {
           console.log("Failed to load marketing counters:", countersErr);
@@ -668,8 +686,14 @@ export default function App() {
             const r = await fetch('/api/counters/read');
             if (r.ok) {
               const d = await r.json();
-              if (d.registered_count != null) setDisplayRegisteredCount(d.registered_count);
-              if (d.subscribed_count != null) setDisplaySubscribedCount(d.subscribed_count);
+              if (d.registered_count != null) {
+                setDisplayRegisteredCount(d.registered_count);
+                if (registeredRef.current) registeredRef.current.textContent = String(d.registered_count);
+              }
+              if (d.subscribed_count != null) {
+                setDisplaySubscribedCount(d.subscribed_count);
+                if (subscribedRef.current) subscribedRef.current.textContent = String(d.subscribed_count);
+              }
             }
           } catch {}
           break;
@@ -2786,19 +2810,19 @@ export default function App() {
             <div className="flex items-center gap-1.5 text-slate-300">
               <User className="w-3 h-3 text-cyan-400" />
               <span>{t('ලියාපදිංචි', 'Registered')}:</span>
-              <span className="text-cyan-300 font-bold">{displayRegisteredCount}</span>
+              <span ref={registeredRef} className="text-cyan-300 font-bold">{displayRegisteredCount}</span>
             </div>
             <span className="text-slate-600">|</span>
             <div className="flex items-center gap-1.5 text-slate-300">
               <CheckCircle className="w-3 h-3 text-emerald-400" />
               <span>{t('සාමාජික', 'Subscribed')}:</span>
-              <span className="text-emerald-300 font-bold">{displaySubscribedCount}</span>
+              <span ref={subscribedRef} className="text-emerald-300 font-bold">{displaySubscribedCount}</span>
             </div>
             <span className="text-slate-600">|</span>
             <div className="flex items-center gap-1.5 text-slate-300">
               <Activity className="w-3 h-3 text-amber-400" />
               <span>{t('මාර්ගගත', 'Online')}:</span>
-              <span className="text-amber-300 font-bold">{14 + liveOnlineCount}</span>
+              <span ref={onlineRef} className="text-amber-300 font-bold">{14 + liveOnlineCount}</span>
             </div>
           </div>
           {countdownDisplay && (
@@ -3822,7 +3846,7 @@ export default function App() {
                             return;
                           }
                           
-                          fetch('/api/counters/increment', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'subscribed' }) }).then(r => r.json()).then(d => { if (d.subscribed_count != null) setDisplaySubscribedCount(d.subscribed_count); }).catch(() => {});
+                          fetch('/api/counters/increment', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'subscribed' }) }).then(r => r.json()).then(d => { if (d.subscribed_count != null) { setDisplaySubscribedCount(d.subscribed_count); if (subscribedRef.current) subscribedRef.current.textContent = String(d.subscribed_count); } }).catch(() => {});
                           // update user
                           setSptUsersList(prev => {
                             const exists = prev.some(u => u.email.toLowerCase() === customerSession.email.toLowerCase());
@@ -4728,7 +4752,7 @@ export default function App() {
                   // Increment registered counter only if user doesn't exist in profiles yet
                   supabase.from('profiles').select('email').eq('email', resolvedEmail).maybeSingle().then(({ data: existingProfile }) => {
                     if (!existingProfile) {
-                      fetch('/api/counters/increment', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'registered' }) }).then(r => r.json()).then(d => { if (d.registered_count != null) setDisplayRegisteredCount(d.registered_count); }).catch(() => {});
+                      fetch('/api/counters/increment', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'registered' }) }).then(r => r.json()).then(d => { if (d.registered_count != null) { setDisplayRegisteredCount(d.registered_count); if (registeredRef.current) registeredRef.current.textContent = String(d.registered_count); } }).catch(() => {});
                     }
                   });
                   // Ensure user is registered in the subscription base
@@ -5037,7 +5061,7 @@ export default function App() {
                     
                     if (customerSession?.email) {
                       const emailLower = customerSession.email.toLowerCase().trim();
-                      fetch('/api/counters/increment', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'subscribed' }) }).then(r => r.json()).then(d => { if (d.subscribed_count != null) setDisplaySubscribedCount(d.subscribed_count); }).catch(() => {});
+                      fetch('/api/counters/increment', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'subscribed' }) }).then(r => r.json()).then(d => { if (d.subscribed_count != null) { setDisplaySubscribedCount(d.subscribed_count); if (subscribedRef.current) subscribedRef.current.textContent = String(d.subscribed_count); } }).catch(() => {});
                       setSptUsersList(prev => {
                         const exists = prev.some(u => u.email.toLowerCase() === emailLower);
                         if (exists) {
