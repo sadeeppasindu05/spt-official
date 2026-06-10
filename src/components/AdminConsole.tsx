@@ -9,7 +9,7 @@ import {
 import { SPACE_WALLPAPERS } from '../data';
 import { SystemConfig, SptTool, ServiceItem, AccessoryBrand, OfferItem, HomeStatCard, AboutCard, ReviewItem, TelemetryEvent, ContactLinkItem, BlogPost, SptUser } from '../types';
 import { ImageCropperModal } from './ImageCropper';
-import { createBackup, downloadBackup, parseBackupFile, saveAutoBackupData, getAutoBackupData, getAutoBackupSettings, saveAutoBackupSettings, getIntervalMs, AutoBackupInterval, AutoBackupSettings } from '../utils/backup';
+import { createBackup, downloadBackup, parseBackupFile, saveAutoBackupData, getAutoBackupData, getAutoBackupSettings, saveAutoBackupSettings, getIntervalMs, AutoBackupInterval, AutoBackupSettings, loadAutoBackupFromSupabase, loadBackupSettingsFromSupabase, persistBackupSettingsToSupabase } from '../utils/backup';
 import { uploadToSupabaseStorage } from '../utils/storage';
 import { supabase } from '../supabaseClient';
 
@@ -505,6 +505,15 @@ export default function AdminConsole({
     }).catch(() => {});
   }, []);
 
+  // Load backup data from Supabase on mount
+  React.useEffect(() => {
+    loadAutoBackupFromSupabase();
+    loadBackupSettingsFromSupabase().then(() => {
+      const settings = getAutoBackupSettings();
+      setAutoBackupSettings(settings);
+    });
+  }, []);
+
   // Auto-backup timer
   React.useEffect(() => {
     const settings = getAutoBackupSettings();
@@ -530,6 +539,7 @@ export default function AdminConsole({
         const newSettings = { ...settings, lastBackup: new Date().toISOString() };
         saveAutoBackupSettings(newSettings);
         setAutoBackupSettings(newSettings);
+        persistBackupSettingsToSupabase(newSettings);
         setAutoBackupToast('🔄 Auto-backup completed at ' + new Date().toLocaleTimeString());
         setTimeout(() => setAutoBackupToast(null), 4000);
       }
@@ -5906,6 +5916,7 @@ export default function AdminConsole({
                     };
                     saveAutoBackupSettings(newSettings);
                     setAutoBackupSettings(newSettings);
+                    persistBackupSettingsToSupabase(newSettings);
                   }}
                   className={`px-3 py-2.5 rounded-xl text-[10px] font-mono font-bold tracking-wider transition cursor-pointer ${
                     autoBackupSettings.interval === opt.value
@@ -5940,6 +5951,7 @@ export default function AdminConsole({
                     const newSettings = { ...autoBackupSettings, lastBackup: new Date().toISOString() };
                     saveAutoBackupSettings(newSettings);
                     setAutoBackupSettings(newSettings);
+                    persistBackupSettingsToSupabase(newSettings);
                     setAutoBackupToast('🔄 Auto-backup saved at ' + new Date().toLocaleTimeString());
                     setTimeout(() => setAutoBackupToast(null), 4000);
                   }}

@@ -42,6 +42,9 @@ export default function App() {
   const [displayRegisteredCount, setDisplayRegisteredCount] = useState<number>(592);
   const [displaySubscribedCount, setDisplaySubscribedCount] = useState<number>(370);
   
+  // Real-time plan activation toast
+  const [planActivationToast, setPlanActivationToast] = useState<{ email: string; plan?: string; status: string } | null>(null);
+
   // Real-time Database/Platform Status state
   const [platformStatus, setPlatformStatus] = useState<'online' | 'local mode' | 'checking' | 'error'>('checking');
 
@@ -666,6 +669,7 @@ export default function App() {
           if (data) {
             if (data.registered_count != null) setDisplayRegisteredCount(data.registered_count);
             if (data.subscribed_count != null) setDisplaySubscribedCount(data.subscribed_count);
+            if (data.online_count != null) setLiveOnlineCount(data.online_count);
           }
           break;
         }
@@ -1488,6 +1492,12 @@ export default function App() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, (payload: any) => {
         if (payload.new?.email) {
           const p = payload.new;
+          const oldStatus = payload.old?.subscription_status;
+          const newStatus = p.subscription_status;
+          if (oldStatus && newStatus && oldStatus !== newStatus && newStatus !== 'trial' && newStatus !== 'expired') {
+            setPlanActivationToast({ email: p.email, plan: p.subscription_plan, status: newStatus });
+            setTimeout(() => setPlanActivationToast(null), 6000);
+          }
           const mapped: SptUser = {
             id: p.id || `profile_${Date.now()}`,
             name: p.name || p.email?.split('@')[0] || 'User',
@@ -1664,7 +1674,7 @@ export default function App() {
         return;
       }
       
-      setDisplaySubscribedCount(prev => prev + 1);
+      supabase.rpc('increment_counter', { counter_type: 'subscribed' }).then(({ data }) => { if (data) setDisplaySubscribedCount(data); });
       setSptUsersList((prev: SptUser[]) => {
         const exists = prev.some(u => u.email.toLowerCase() === userEmail.toLowerCase());
         const expDate = new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString();
@@ -2426,6 +2436,28 @@ export default function App() {
       <div className="absolute top-10 left-12 w-[350px] h-[350px] rounded-full bg-neon-blue/20 blur-[130px] animate-pulse pointer-events-none" />
       <div className="absolute bottom-20 right-10 w-[400px] h-[400px] rounded-full bg-neon-purple/20 blur-[140px] animate-pulse pointer-events-none" />
       <div className="absolute top-1/2 left-1/3 w-[300px] h-[300px] rounded-full bg-neon-green/15 blur-[120px] pointer-events-none" />
+
+      {planActivationToast && (
+        <div className="fixed top-4 right-4 z-[9999] max-w-sm animate-in slide-in-from-right-2 bg-emerald-900/90 backdrop-blur-xl border border-emerald-400/30 rounded-2xl p-4 shadow-2xl shadow-emerald-500/10">
+          <div className="flex items-start gap-3">
+            <div className="w-8 h-8 rounded-full bg-emerald-500/20 flex items-center justify-center flex-shrink-0 mt-0.5">
+              <span className="text-emerald-400 text-lg">🎉</span>
+            </div>
+            <div className="min-w-0">
+              <p className="text-xs font-mono text-emerald-200 font-bold uppercase tracking-wider">Plan Activated!</p>
+              <p className="text-sm text-white font-medium mt-0.5 break-all">{planActivationToast.email}</p>
+              <p className="text-[10px] text-emerald-300/70 font-mono mt-0.5">
+                {planActivationToast.plan ? `Plan: ${planActivationToast.plan}` : ''}
+                {planActivationToast.plan ? ' · ' : ''}
+                Status: {planActivationToast.status}
+              </p>
+            </div>
+            <button onClick={() => setPlanActivationToast(null)} className="p-1 hover:bg-white/10 rounded-lg transition cursor-pointer flex-shrink-0">
+              <span className="text-slate-400 text-xs">✕</span>
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Global Theme Overlay */}
       <div className="absolute inset-0 bg-slate-950/65 pointer-events-none z-0" />
@@ -3729,7 +3761,7 @@ export default function App() {
                             return;
                           }
                           
-                          setDisplaySubscribedCount(prev => prev + 1);
+                          supabase.rpc('increment_counter', { counter_type: 'subscribed' }).then(({ data }) => { if (data) setDisplaySubscribedCount(data); });
                           // update user
                           setSptUsersList(prev => {
                             const exists = prev.some(u => u.email.toLowerCase() === customerSession.email.toLowerCase());
@@ -4633,8 +4665,8 @@ export default function App() {
                   console.log('[onSuccess] isLoginFlow:', isLoginFlow, 'password present:', !!userData.password, 'userData keys:', Object.keys(userData));
 
                   // Increment display counters for marketing
-                  setDisplayRegisteredCount(prev => prev + 1);
-                  setDisplaySubscribedCount(prev => prev + 1);
+                  supabase.rpc('increment_counter', { counter_type: 'registered' }).then(({ data }) => { if (data) setDisplayRegisteredCount(data); });
+                  supabase.rpc('increment_counter', { counter_type: 'subscribed' }).then(({ data }) => { if (data) setDisplaySubscribedCount(data); });
                   // Ensure user is registered in the subscription base
                   setSptUsersList(prev => {
                     const exists = prev.some(u => u.email.toLowerCase() === resolvedEmail);
@@ -4935,7 +4967,7 @@ export default function App() {
                     
                     if (customerSession?.email) {
                       const emailLower = customerSession.email.toLowerCase().trim();
-                      setDisplaySubscribedCount(prev => prev + 1);
+                      supabase.rpc('increment_counter', { counter_type: 'subscribed' }).then(({ data }) => { if (data) setDisplaySubscribedCount(data); });
                       setSptUsersList(prev => {
                         const exists = prev.some(u => u.email.toLowerCase() === emailLower);
                         if (exists) {

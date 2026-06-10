@@ -947,10 +947,19 @@ async function startServer() {
         realtime: { transport: ws }
       });
 
-      // Find user by email in auth
+      // Find or create user in auth
       const { data: userList } = await supabaseAdmin.auth.admin.listUsers();
-      const authUser = userList?.users?.find((u: any) => u.email?.toLowerCase() === email.toLowerCase());
-      if (!authUser) return res.status(404).json({ error: 'User not found in auth' });
+      let authUser = userList?.users?.find((u: any) => u.email?.toLowerCase() === email.toLowerCase());
+      if (!authUser) {
+        const { data: newUser, error: createError } = await supabaseAdmin.auth.admin.createUser({
+          email: email.toLowerCase(),
+          email_confirm: true,
+          password: crypto.randomUUID(),
+        });
+        if (createError) return res.status(500).json({ error: 'Failed to create auth user: ' + createError.message });
+        authUser = newUser?.user;
+        if (!authUser) return res.status(500).json({ error: 'Failed to create auth user' });
+      }
 
       await supabaseAdmin.from('profiles').upsert({
         id: authUser.id,
@@ -1011,17 +1020,31 @@ async function startServer() {
     app.use('/uploads', express.static(uploadsPath));
   }
 
+  async function persistOnlineCount() {
+    try {
+      const supabaseUrl = getSupabaseUrl();
+      const serviceRole = getSupabaseServiceRole();
+      if (!supabaseUrl || !serviceRole) return;
+      const sb = createClient(supabaseUrl, serviceRole);
+      await sb.from('marketing_counters').upsert(
+        { id: 'global', online_count: onlineVisitors.size, updated_at: new Date().toISOString() },
+        { onConflict: 'id' }
+      );
+    } catch {}
+  }
+
   // Online visitor heartbeat + count
-  app.get("/api/online/count", (req, res) => {
+  app.get("/api/online/count", async (req, res) => {
     const ip = getClientIp(req);
     onlineVisitors.set(ip, Date.now());
-    const count = onlineVisitors.size;
-    res.json({ count, online: count });
+    await persistOnlineCount();
+    res.json({ count: onlineVisitors.size, online: onlineVisitors.size });
   });
 
-  app.post("/api/online/heartbeat", (req, res) => {
+  app.post("/api/online/heartbeat", async (req, res) => {
     const ip = getClientIp(req);
     onlineVisitors.set(ip, Date.now());
+    await persistOnlineCount();
     res.json({ success: true });
   });
 

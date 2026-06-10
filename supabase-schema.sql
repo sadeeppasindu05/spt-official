@@ -430,3 +430,23 @@ CREATE POLICY "Only admins can insert backups." ON public.backups FOR INSERT WIT
 CREATE POLICY "Only admins can delete backups." ON public.backups FOR DELETE USING (is_admin());
 
 ALTER PUBLICATION supabase_realtime ADD TABLE IF NOT EXISTS public.backups;
+
+-- 22. Atomic counter increment RPC (avoids client-side prev+1 race conditions)
+CREATE OR REPLACE FUNCTION increment_counter(counter_type text)
+RETURNS integer
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+  new_val integer;
+BEGIN
+  IF counter_type = 'registered' THEN
+    UPDATE marketing_counters SET registered_count = registered_count + 1, updated_at = now() WHERE id = 'global' RETURNING registered_count INTO new_val;
+  ELSIF counter_type = 'subscribed' THEN
+    UPDATE marketing_counters SET subscribed_count = subscribed_count + 1, updated_at = now() WHERE id = 'global' RETURNING subscribed_count INTO new_val;
+  ELSE
+    RAISE EXCEPTION 'invalid counter_type: %', counter_type;
+  END IF;
+  RETURN new_val;
+END;
+$$;
