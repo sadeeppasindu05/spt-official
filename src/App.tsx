@@ -358,7 +358,8 @@ export default function App() {
             registeredAt: item.created_at || new Date().toISOString(),
             subscriptionStatus: item.subscription_status || 'trial',
             subscriptionPlan: item.subscription_plan || 'trial',
-            subscriptionExpiresAt: item.subscription_expires_at
+            subscriptionExpiresAt: item.subscription_expires_at,
+            profilePictureUrl: item.profile_picture_url || undefined
           })));
         }
 
@@ -477,13 +478,15 @@ export default function App() {
         setSptUsersList(prev => {
           const exists = prev.some(u => u.email.toLowerCase() === email.toLowerCase());
           if (exists) return prev;
+          const existing = prev.find(u => u.email.toLowerCase() === email.toLowerCase());
           return [{
             id: `user_${Date.now()}`,
             name,
             email: email.toLowerCase(),
             registeredAt: new Date().toISOString(),
             subscriptionStatus: 'trial',
-            subscriptionExpiresAt: new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString()
+            subscriptionExpiresAt: new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString(),
+            profilePictureUrl: existing?.profilePictureUrl || undefined
           }, ...prev];
         });
 
@@ -1533,7 +1536,8 @@ export default function App() {
             const idx = prev.findIndex(u => u.email.toLowerCase() === mapped.email.toLowerCase());
             if (idx >= 0) {
               const updated = [...prev];
-              updated[idx] = { ...updated[idx], ...mapped };
+              const existingUrl = updated[idx].profilePictureUrl;
+              updated[idx] = { ...updated[idx], ...mapped, profilePictureUrl: mapped.profilePictureUrl || existingUrl || undefined };
               return updated;
             }
             return [mapped, ...prev];
@@ -5327,7 +5331,15 @@ export default function App() {
                                     return u;
                                   }));
                                   if (publicUrl) {
-                                    await syncProfileToSupabase(email, { profile_picture_url: publicUrl });
+                                    try {
+                                      await syncProfileToSupabase(email, { profile_picture_url: publicUrl });
+                                    } catch {}
+                                    try {
+                                      await supabase.from('system_config').upsert(
+                                        { key: `profile_pic:${email}`, value: publicUrl },
+                                        { onConflict: 'key' }
+                                      );
+                                    } catch {}
                                   }
                                   alert('පැතිකඩ ඡායාරූපය සාර්ථකව උඩුගත කරන ලදී! (Profile image uploaded!)');
                                 };

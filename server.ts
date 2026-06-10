@@ -938,8 +938,7 @@ async function startServer() {
           });
           await supabaseAdmin.from('profiles').upsert({
             email: email.toLowerCase(),
-            name: name || email.split('@')[0],
-            updated_at: new Date().toISOString()
+            name: name || email.split('@')[0]
           }, { onConflict: 'email' });
         } catch (dbErr: any) {
           console.error('Failed to update profile in Supabase:', dbErr.message);
@@ -983,7 +982,7 @@ async function startServer() {
       try {
         const { data: updateData } = await supabaseAdmin
           .from('profiles')
-          .update({ ...updates, updated_at: new Date().toISOString() })
+          .update({ ...updates })
           .eq('email', email.toLowerCase())
           .select();
 
@@ -1016,8 +1015,7 @@ async function startServer() {
             await supabaseAdmin.from('profiles').insert({
               id: authUserId,
               email: email.toLowerCase(),
-              ...updates,
-              updated_at: new Date().toISOString()
+              ...updates
             });
           }
         }
