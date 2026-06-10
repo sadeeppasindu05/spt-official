@@ -30,6 +30,11 @@ CREATE TABLE IF NOT EXISTS public.profiles (
 );
 
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'profiles_email_unique') THEN
+    ALTER TABLE public.profiles ADD CONSTRAINT profiles_email_unique UNIQUE (email);
+  END IF;
+END $$;
 
 DROP POLICY IF EXISTS "Profiles are viewable by everyone." ON public.profiles;
 DROP POLICY IF EXISTS "Users can insert their own profile." ON public.profiles;

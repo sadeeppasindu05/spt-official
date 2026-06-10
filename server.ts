@@ -947,26 +947,34 @@ async function startServer() {
         realtime: { transport: ws }
       });
 
-      // Find or create user in auth
-      const { data: userList } = await supabaseAdmin.auth.admin.listUsers();
-      let authUser = userList?.users?.find((u: any) => u.email?.toLowerCase() === email.toLowerCase());
-      if (!authUser) {
-        const { data: newUser, error: createError } = await supabaseAdmin.auth.admin.createUser({
-          email: email.toLowerCase(),
-          email_confirm: true,
-          password: crypto.randomUUID(),
-        });
-        if (createError) return res.status(500).json({ error: 'Failed to create auth user: ' + createError.message });
-        authUser = newUser?.user;
-        if (!authUser) return res.status(500).json({ error: 'Failed to create auth user' });
-      }
-
-      await supabaseAdmin.from('profiles').upsert({
-        id: authUser.id,
+      // Try direct upsert by email first (requires unique constraint on email)
+      const { error: upsertError } = await supabaseAdmin.from('profiles').upsert({
         email: email.toLowerCase(),
         ...updates,
         updated_at: new Date().toISOString()
-      }, { onConflict: 'id' });
+      }, { onConflict: 'email', ignoreDuplicates: false });
+
+      if (upsertError) {
+        // Fallback: find or create auth user, then upsert by id
+        const { data: userList } = await supabaseAdmin.auth.admin.listUsers();
+        let authUser = userList?.users?.find((u: any) => u.email?.toLowerCase() === email.toLowerCase());
+        if (!authUser) {
+          const { data: newUser, error: createError } = await supabaseAdmin.auth.admin.createUser({
+            email: email.toLowerCase(),
+            email_confirm: true,
+            password: crypto.randomUUID(),
+          });
+          if (!createError && newUser?.user) authUser = newUser.user;
+        }
+        if (authUser) {
+          await supabaseAdmin.from('profiles').upsert({
+            id: authUser.id,
+            email: email.toLowerCase(),
+            ...updates,
+            updated_at: new Date().toISOString()
+          }, { onConflict: 'id' });
+        }
+      }
 
       res.json({ success: true });
     } catch (err: any) {

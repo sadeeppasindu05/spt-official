@@ -1526,6 +1526,32 @@ export default function App() {
     return () => { supabase.removeChannel(channel); };
   }, []);
 
+  // Periodic profile refresh for reliable cross-device sync (backup for real-time)
+  React.useEffect(() => {
+    const interval = setInterval(async () => {
+      try {
+        const { data } = await supabase.from('profiles').select('*');
+        if (data && data.length > 0) {
+          setSptUsersList(prev => {
+            const updated = [...prev];
+            for (const p of data) {
+              const email = p.email?.toLowerCase();
+              if (!email) continue;
+              const idx = updated.findIndex(u => u.email.toLowerCase() === email);
+              if (idx >= 0) {
+                if (p.profile_picture_url && p.profile_picture_url !== updated[idx].profilePictureUrl) {
+                  updated[idx] = { ...updated[idx], profilePictureUrl: p.profile_picture_url };
+                }
+              }
+            }
+            return updated;
+          });
+        }
+      } catch {}
+    }, 60000);
+    return () => clearInterval(interval);
+  }, []);
+
   const [blogsList, setBlogsList] = useState<BlogPost[]>([
       {
         id: 'b1',
@@ -4679,6 +4705,12 @@ export default function App() {
                       subscriptionStatus: 'trial',
                       subscriptionExpiresAt: new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString()
                     }, ...prev];
+                  });
+                  // Sync profile to DB immediately so cross-device pic sync works later
+                  syncProfileToSupabase(resolvedEmail, {
+                    name: displayName,
+                    subscription_status: 'trial',
+                    subscription_expires_at: new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString()
                   });
 
                   const isMasterAdmin = resolvedEmail === 'sadeeppasindu0218@gmail.com';
