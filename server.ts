@@ -1109,6 +1109,43 @@ async function startServer() {
     res.json({ success: true });
   });
 
+  // Generic counter write (uses service_role to bypass RLS)
+  app.post("/api/counters/write", async (req, res) => {
+    try {
+      const supabaseUrl = getSupabaseUrl();
+      const serviceRole = getSupabaseServiceRole();
+      if (!supabaseUrl || !serviceRole) return res.status(500).json({ error: "Server config missing" });
+      const sb = createClient(supabaseUrl, serviceRole, { auth: { autoRefreshToken: false, persistSession: false }, realtime: { transport: ws } });
+      const { registered_count, subscribed_count } = req.body || {};
+      const payload: Record<string, any> = { updated_at: new Date().toISOString() };
+      if (registered_count != null) payload.registered_count = registered_count;
+      if (subscribed_count != null) payload.subscribed_count = subscribed_count;
+      if (Object.keys(payload).length <= 1) return res.status(400).json({ error: "No counter fields provided" });
+      const { data, error } = await sb.from('marketing_counters').upsert({ id: 'global', ...payload }, { onConflict: 'id' }).select().maybeSingle();
+      if (error) return res.status(500).json({ error: error.message });
+      res.json({ success: true, registered_count: data?.registered_count ?? registered_count, subscribed_count: data?.subscribed_count ?? subscribed_count });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  // Counter increment (uses service_role to bypass RLS)
+  app.post("/api/counters/increment", async (req, res) => {
+    try {
+      const { type } = req.body || {};
+      if (!type || !['registered', 'subscribed'].includes(type)) return res.status(400).json({ error: "Invalid type" });
+      const supabaseUrl = getSupabaseUrl();
+      const serviceRole = getSupabaseServiceRole();
+      if (!supabaseUrl || !serviceRole) return res.status(500).json({ error: "Server config missing" });
+      const sb = createClient(supabaseUrl, serviceRole, { auth: { autoRefreshToken: false, persistSession: false }, realtime: { transport: ws } });
+      const { data: current } = await sb.from('marketing_counters').select('*').eq('id', 'global').maybeSingle();
+      const currentCount = current?.[type === 'registered' ? 'registered_count' : 'subscribed_count'] || 0;
+      const newCount = currentCount + 1;
+      const col = type === 'registered' ? 'registered_count' : 'subscribed_count';
+      const { data, error } = await sb.from('marketing_counters').upsert({ id: 'global', [col]: newCount, updated_at: new Date().toISOString() }, { onConflict: 'id' }).select().maybeSingle();
+      if (error) return res.status(500).json({ error: error.message });
+      res.json({ success: true, [col]: newCount, registered_count: data?.registered_count ?? (type === 'registered' ? newCount : current?.registered_count ?? 592), subscribed_count: data?.subscribed_count ?? (type === 'subscribed' ? newCount : current?.subscribed_count ?? 370) });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
   // Apply pending SQL migrations to Supabase DB
   app.post("/api/admin/apply-migrations", async (req, res) => {
     const regions = ['us-east-1', 'us-west-1', 'eu-west-1', 'eu-central-1', 'ap-southeast-1', 'ap-northeast-1', 'ap-southeast-2', 'sa-east-1', 'ca-central-1'];

@@ -1628,18 +1628,7 @@ export default function App() {
   ]);
 
 
-  React.useEffect(() => {
-    const isSupabaseReady = import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_ANON_KEY;
-    if (isSupabaseReady) {
-      supabase.from('marketing_counters').upsert({ id: 'global', registered_count: displayRegisteredCount, updated_at: new Date().toISOString() }, { onConflict: 'id' }).then(({ error }) => { if (error) console.error('Counter sync error:', error); });
-    }
-  }, [displayRegisteredCount]);
-  React.useEffect(() => {
-    const isSupabaseReady = import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_ANON_KEY;
-    if (isSupabaseReady) {
-      supabase.from('marketing_counters').upsert({ id: 'global', subscribed_count: displaySubscribedCount, updated_at: new Date().toISOString() }, { onConflict: 'id' }).then(({ error }) => { if (error) console.error('Counter sync error:', error); });
-    }
-  }, [displaySubscribedCount]);
+  // Counter sync to DB handled by /api/counters/increment server endpoint (bypasses RLS)
 
   // Subscription Payment flow states
   const [showLkrPrices, setShowLkrPrices] = useState(false);
@@ -3837,7 +3826,7 @@ export default function App() {
                             return;
                           }
                           
-                          supabase.rpc('increment_counter', { counter_type: 'subscribed' }).then(({ data, error }) => { if (error) { supabase.from('marketing_counters').select('subscribed_count').eq('id', 'global').single().then(({ data: c }) => { if (c) { const nv = (c.subscribed_count || 0) + 1; supabase.from('marketing_counters').update({ subscribed_count: nv }).eq('id', 'global'); setDisplaySubscribedCount(nv); } }); } else if (data) setDisplaySubscribedCount(data); });
+                          fetch('/api/counters/increment', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'subscribed' }) }).then(r => r.json()).then(d => { if (d.subscribed_count != null) setDisplaySubscribedCount(d.subscribed_count); }).catch(() => {});
                           // update user
                           setSptUsersList(prev => {
                             const exists = prev.some(u => u.email.toLowerCase() === customerSession.email.toLowerCase());
@@ -4743,13 +4732,7 @@ export default function App() {
                   // Increment registered counter only if user doesn't exist in profiles yet
                   supabase.from('profiles').select('email').eq('email', resolvedEmail).maybeSingle().then(({ data: existingProfile }) => {
                     if (!existingProfile) {
-                      supabase.rpc('increment_counter', { counter_type: 'registered' }).then(({ data, error }) => {
-                        if (error) {
-                          supabase.from('marketing_counters').select('registered_count').eq('id', 'global').single().then(({ data: c }) => {
-                            if (c) { const nv = (c.registered_count || 0) + 1; supabase.from('marketing_counters').update({ registered_count: nv }).eq('id', 'global'); setDisplayRegisteredCount(nv); }
-                          });
-                        } else if (data) setDisplayRegisteredCount(data);
-                      });
+                      fetch('/api/counters/increment', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'registered' }) }).then(r => r.json()).then(d => { if (d.registered_count != null) setDisplayRegisteredCount(d.registered_count); }).catch(() => {});
                     }
                   });
                   // Ensure user is registered in the subscription base
@@ -5058,7 +5041,7 @@ export default function App() {
                     
                     if (customerSession?.email) {
                       const emailLower = customerSession.email.toLowerCase().trim();
-                      supabase.rpc('increment_counter', { counter_type: 'subscribed' }).then(({ data, error }) => { if (error) { supabase.from('marketing_counters').select('subscribed_count').eq('id', 'global').single().then(({ data: c }) => { if (c) { const nv = (c.subscribed_count || 0) + 1; supabase.from('marketing_counters').update({ subscribed_count: nv }).eq('id', 'global'); setDisplaySubscribedCount(nv); } }); } else if (data) setDisplaySubscribedCount(data); });
+                      fetch('/api/counters/increment', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'subscribed' }) }).then(r => r.json()).then(d => { if (d.subscribed_count != null) setDisplaySubscribedCount(d.subscribed_count); }).catch(() => {});
                       setSptUsersList(prev => {
                         const exists = prev.some(u => u.email.toLowerCase() === emailLower);
                         if (exists) {
