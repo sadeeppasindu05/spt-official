@@ -962,13 +962,16 @@ async function startServer() {
       });
 
       // Also save to system_config (no FK constraints — reliable fallback)
-      const picKey = `profile_pic:${email.toLowerCase()}`;
-      try {
-        await supabaseAdmin.from('system_config').upsert(
-          { key: picKey, value: updates.profile_picture_url || '' },
-          { onConflict: 'key' }
-        );
-      } catch {}
+      if (updates.hasOwnProperty('profile_picture_url')) {
+        const picKey = `profile_pic:${email.toLowerCase()}`;
+        const picVal = updates.profile_picture_url || '';
+        try {
+          await supabaseAdmin.from('system_config').upsert(
+            { key: picKey, value: picVal },
+            { onConflict: 'key' }
+          );
+        } catch {}
+      }
 
       // Try to update profiles table (may fail for users without Auth entry)
       try {
