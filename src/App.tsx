@@ -4749,12 +4749,8 @@ export default function App() {
                   const isLoginFlow = !!userData.password;
                   console.log('[onSuccess] isLoginFlow:', isLoginFlow, 'password present:', !!userData.password, 'userData keys:', Object.keys(userData));
 
-                  // Increment registered counter only if user doesn't exist in profiles yet
-                  supabase.from('profiles').select('email').eq('email', resolvedEmail).maybeSingle().then(({ data: existingProfile }) => {
-                    if (!existingProfile) {
-                      fetch('/api/counters/increment', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'registered' }) }).then(r => r.json()).then(d => { if (d.registered_count != null) { setDisplayRegisteredCount(d.registered_count); if (registeredRef.current) registeredRef.current.textContent = String(d.registered_count); } }).catch(() => {});
-                    }
-                  });
+                  // Increment registered counter (server-side profile check, no client Supabase)
+                  fetch('/api/counters/increment-if-new', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: resolvedEmail, type: 'registered' }) }).then(r => r.json()).then(d => { if (d.registered_count != null) { setDisplayRegisteredCount(d.registered_count); if (registeredRef.current) registeredRef.current.textContent = String(d.registered_count); } }).catch(() => {});
                   // Ensure user is registered in the subscription base
                   setSptUsersList(prev => {
                     const exists = prev.some(u => u.email.toLowerCase() === resolvedEmail);
