@@ -4,7 +4,7 @@ import {
   Sparkles, Layers, Compass, Tv, Music, PenTool, Shirt, Shield, QrCode, 
   Link2, User, LayoutDashboard, Eye, Star, Check, Plus, Search, Share2, 
   LogOut, Heart, Settings, Upload, Activity, Code, Smartphone, Paintbrush, 
-  CheckCircle, MessageSquare, Send, Copy, Lock, ChevronRight, Sparkle, ArrowRight, X, Info, Video, ExternalLink, BookOpen, Clock, RefreshCw, ShieldCheck, CreditCard
+  CheckCircle, MessageSquare, Send, Copy, Lock, ChevronRight, Sparkle, ArrowRight, X, Info, Video, ExternalLink, BookOpen, Clock, RefreshCw, ShieldCheck, CreditCard, AlertTriangle
 } from 'lucide-react';
 
 import { SPACE_WALLPAPERS, INITIAL_SERVICES, ACCESSORY_BRANDS, INITIAL_REVIEWS, INITIAL_TOOLS } from './data';
@@ -2023,9 +2023,12 @@ export default function App() {
 
   // Load admin PIN from Supabase system_config on mount
   React.useEffect(() => {
-    supabase.from('system_config').select('value').eq('key', 'admin_pin_hash').maybeSingle().then(({ data }) => {
-      if (data?.value) setAdminPinState(data.value);
-    }).catch(() => {});
+    (async () => {
+      try {
+        const { data } = await supabase.from('system_config').select('value').eq('key', 'admin_pin_hash').maybeSingle();
+        if (data?.value) setAdminPinState(data.value);
+      } catch {}
+    })();
   }, []);
 
   // Synchronize plans selection dynamically to user subscription status
