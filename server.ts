@@ -1077,6 +1077,9 @@ async function startServer() {
   app.get('/favicon.png', (req, res) => {
     res.type('png').send(faviconBuffer);
   });
+  app.get('/favicon.ico', (req, res) => {
+    res.type('ico').send(faviconBuffer);
+  });
 
   async function persistOnlineCount() {
     try {
