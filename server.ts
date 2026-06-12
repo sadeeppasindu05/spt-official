@@ -59,7 +59,7 @@ function getSupabaseAnonKey() {
 }
 
 function getSupabaseServiceRole() {
-  return process.env.SUPABASE_SERVICE_ROLE_KEY;
+  return process.env.SUPABASE_SERVICE_ROLE_KEY || getSupabaseAnonKey() || '';
 }
 
 function getAppUrl(req?: express.Request) {
