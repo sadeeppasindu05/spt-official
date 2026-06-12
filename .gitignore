@@ -18,4 +18,5 @@ Thumbs.db
 dist/
 server.js
 spt-icon.png
+favicon.ico
 public/favicon.png
