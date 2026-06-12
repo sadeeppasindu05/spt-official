@@ -1160,6 +1160,30 @@ async function startServer() {
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
 
+  // Counter increment with server-side profile check (no client Supabase needed)
+  app.post("/api/counters/increment-if-new", async (req, res) => {
+    try {
+      const { email, type } = req.body || {};
+      if (!email || type !== 'registered') return res.status(400).json({ error: "Invalid request" });
+      const supabaseUrl = getSupabaseUrl();
+      const serviceRole = getSupabaseServiceRole();
+      if (!supabaseUrl || !serviceRole) return res.status(500).json({ error: "Server config missing" });
+      const sb = createClient(supabaseUrl, serviceRole, { auth: { autoRefreshToken: false, persistSession: false }, realtime: { transport: ws } });
+      const { data: existing } = await sb.from('profiles').select('email').eq('email', email.toLowerCase().trim()).maybeSingle();
+      let incremented = false;
+      let regCount = 592, subCount = 370;
+      const { data: mc } = await sb.from('marketing_counters').select('*').eq('id', 'global').maybeSingle();
+      if (mc) { regCount = mc.registered_count ?? 592; subCount = mc.subscribed_count ?? 370; }
+      if (!existing) {
+        const newCount = regCount + 1;
+        await sb.from('marketing_counters').upsert({ id: 'global', registered_count: newCount, updated_at: new Date().toISOString() }, { onConflict: 'id' });
+        regCount = newCount;
+        incremented = true;
+      }
+      res.json({ registered_count: regCount, subscribed_count: subCount, incremented });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
   // Apply pending SQL migrations to Supabase DB
   app.post("/api/admin/apply-migrations", async (req, res) => {
     const regions = ['us-east-1', 'us-west-1', 'eu-west-1', 'eu-central-1', 'ap-southeast-1', 'ap-northeast-1', 'ap-southeast-2', 'sa-east-1', 'ca-central-1'];
